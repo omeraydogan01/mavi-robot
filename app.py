@@ -8,11 +8,11 @@ from langchain.chat_models import ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 
-# .env dosyasını yükle (lokalde)
+# Lokal test için .env yükle
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
-# Streamlit Cloud için st.secrets kullan
+# Streamlit Cloud için secrets kullan
 if "OPENAI_API_KEY" in st.secrets:
     api_key = st.secrets["OPENAI_API_KEY"]
 
@@ -26,9 +26,11 @@ def main():
         pdf_reader = PdfReader(pdf)
         text = ""
         for page in pdf_reader.pages:
-            text += page.extract_text()
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text
 
-        # Metin parçalara böl
+        # Metni parçalara böl
         text_splitter = CharacterTextSplitter(
             separator="\n",
             chunk_size=1000,
