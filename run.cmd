@@ -1,0 +1,1 @@
+cmd /k ".\myenv\Scripts\activate & cmd /k streamlit run app.py"
