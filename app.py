@@ -1,6 +1,6 @@
 import os
-from dotenv import load_dotenv
 import streamlit as st
+from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -8,11 +8,11 @@ from langchain.chat_models import ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 
-# Lokal test için .env yükle
+# .env dosyasını yükle (lokal için)
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
-# Streamlit Cloud için secrets kullan
+# Streamlit Cloud secrets
 if "OPENAI_API_KEY" in st.secrets:
     api_key = st.secrets["OPENAI_API_KEY"]
 
@@ -39,10 +39,10 @@ def main():
         )
         chunks = text_splitter.split_text(text)
 
-        # Embeddings oluştur
+        # OpenAI Embeddings
         embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=api_key
+            model_name="text-embedding-3-small",  # ⚠️ eski 'model' değil
+            openai_api_key=api_key               # ⚠️ eski 'api_key' değil
         )
         knowledge_base = FAISS.from_texts(chunks, embeddings)
 
@@ -51,11 +51,11 @@ def main():
         if user_question:
             docs = knowledge_base.similarity_search(user_question)
 
-            # OpenAI LLM
+            # OpenAI Chat LLM
             llm = ChatOpenAI(
                 model_name="gpt-3.5-turbo",
                 temperature=0,
-                api_key=api_key
+                openai_api_key=api_key
             )
             chain = load_qa_chain(llm, chain_type="stuff")
 
