@@ -79,7 +79,7 @@ def main():
         vectorstore = create_vectorstore(chunks, embeddings)
 
         # Kullanıcı sorusu (mavi çerçeveli alan)
-        user_question = st.text_area("Sorunuzu yazın 👇")
+        user_question = st.text_input("Sorunuzu yazın 👇")
 
         if user_question:
             # Daha fazla chunk → daha sağlam cevap
