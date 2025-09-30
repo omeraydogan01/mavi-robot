@@ -22,7 +22,10 @@ def main():
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
-    uploaded_file = st.file_uploader("Bir PDF yükleyin", type="pdf")
+    uploaded_file = st.file_uploader(
+    "📂 PDF dosyanızı buraya yükleyin", 
+    type="pdf"
+)
     if uploaded_file is not None:
         pdf_reader = PdfReader(uploaded_file)
         text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
