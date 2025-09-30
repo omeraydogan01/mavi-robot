@@ -44,7 +44,7 @@ def main():
 
         if user_question:
             # Daha az chunk getir → daha hızlı
-            docs = vectorstore.similarity_search(user_question, k=3)
+            docs = vectorstore.similarity_search(user_question, k=4)
 
             # Daha hızlı LLM
             llm = ChatOpenAI(
