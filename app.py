@@ -51,12 +51,12 @@ def main():
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
-    uploaded_file = st.file_uploader("📂 PDF yükleyin", type="pdf")
+    uploaded_file = st.file_uploader("📂 Doküman yükleyin", type="pdf")
     if uploaded_file is not None:
         pdf_reader = PdfReader(uploaded_file)
         text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
         
-        st.info(f"📄 Yüklenen PDF toplam **{len(pdf_reader.pages)}** sayfa içeriyor.")
+        st.info(f"📄 Yüklenen doküman toplam **{len(pdf_reader.pages)}** sayfa içeriyor.")
 
         # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(
@@ -79,7 +79,7 @@ def main():
         vectorstore = create_vectorstore(chunks, embeddings)
 
         # Kullanıcı sorusu (mavi çerçeveli alan)
-        user_question = st.text_area("Sorunuzu yazın 👇", height=150)
+        user_question = st.text_area("Sorunuzu yazın 👇", height=130)
 
         if user_question:
             # Daha fazla chunk → daha sağlam cevap
