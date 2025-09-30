@@ -10,15 +10,14 @@ from langchain.chains.question_answering import load_qa_chain
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
 
-    # CSS - text_area mavi kalın çerçeve
+    # CSS - text_input mavi kalın çerçeve
     st.markdown("""
         <style>
-        div[data-testid="stTextArea"] textarea {
+        div[data-testid="stTextInput"] > div > input {
             border: 3px solid #1E90FF;
             border-radius: 8px;
             padding: 10px;
             font-size: 16px;
-            resize: none;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -66,19 +65,17 @@ def main():
 
         vectorstore = create_vectorstore(chunks, embeddings)
 
-        # Kullanıcı sorusu formu (mavi çerçeve + Enter ile gönderim)
-        with st.form("question_form", clear_on_submit=True):
-            user_question = st.text_area("Sorunuzu yazın 👇", height=130)
-            submitted = st.form_submit_button("Sor")
+        # Kullanıcı sorusu (tek satır input)
+        user_question = st.text_input("Sorunuzu yazın 👇")
 
-            if submitted and user_question:
-                docs = vectorstore.similarity_search(user_question, k=6)
-                llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
-                chain = load_qa_chain(llm, chain_type="stuff")
-                answer = chain.run(input_documents=docs, question=user_question)
+        if user_question:
+            docs = vectorstore.similarity_search(user_question, k=6)
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
+            chain = load_qa_chain(llm, chain_type="stuff")
+            answer = chain.run(input_documents=docs, question=user_question)
 
-                st.subheader("💡 Cevap")
-                st.success(answer)
+            st.subheader("💡 Cevap")
+            st.success(answer)
 
 if __name__ == "__main__":
     main()
