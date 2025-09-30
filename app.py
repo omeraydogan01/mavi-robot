@@ -7,14 +7,14 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 
 def main():
-    st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
+    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
     
-    # Header ve logo
+    # Header ve logo yan yana
     col1, col2 = st.columns([1, 6])
     with col1:
-        st.image("logo.png", width=60)  # Logoyu biraz büyüttük
+        st.image("logo.png", width=120)  # logo.png dosyasının yolu ve boyutu
     with col2:
-        st.header("📚 PDF ile Hızlı Sohbet")
+        st.header("Dokümana Soru Sor")
 
     # API key'i Streamlit secrets veya ortam değişkeninden al
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
