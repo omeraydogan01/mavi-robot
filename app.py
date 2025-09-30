@@ -12,53 +12,61 @@ def main():
     # Header ve logo yan yana
     col1, col2 = st.columns([1, 6])
     with col1:
-        st.image("logo.png", width=120)  # logo.png dosyasının yolu ve boyutu
+        st.image("logo.png", width=120)
     with col2:
         st.header("Dokümana Soru Sor")
 
-    # API key'i Streamlit secrets veya ortam değişkeninden al
-    api_key = os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
+    # API key kontrolü
+    api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
+    if not api_key:
+        st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
+        st.stop()
 
     uploaded_file = st.file_uploader("Bir PDF yükleyin", type="pdf")
     if uploaded_file is not None:
         pdf_reader = PdfReader(uploaded_file)
-        text = "".join([page.extract_text() for page in pdf_reader.pages])
+        text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
+        
+        st.info(f"📄 Yüklenen PDF toplam **{len(pdf_reader.pages)}** sayfa içeriyor.")
 
-        # Başlık/alt başlıkları koruyan splitter
+        # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=2000,  # Daha büyük chunk → daha az parça → hızlı
+            chunk_size=2000,
             chunk_overlap=200
         )
         chunks = text_splitter.split_text(text)
 
-        # Daha doğru embedding modeli
+        # Embedding modeli
         embeddings = OpenAIEmbeddings(
             model="text-embedding-3-large",
             openai_api_key=api_key
         )
 
         # FAISS vektör veritabanı
-        vectorstore = FAISS.from_texts(chunks, embeddings)
+        @st.cache_resource
+        def create_vectorstore(chunks, embeddings):
+            return FAISS.from_texts(chunks, embeddings)
+        
+        vectorstore = create_vectorstore(chunks, embeddings)
 
         user_question = st.text_input("Sorunuzu yazın 👇")
 
         if user_question:
-            # Daha az chunk getir → daha hızlı
-            docs = vectorstore.similarity_search(user_question, k=4)
+            # Daha fazla chunk → daha sağlam cevap
+            docs = vectorstore.similarity_search(user_question, k=6)
 
-            # Daha hızlı LLM
+            # Daha hızlı ve ucuz model
             llm = ChatOpenAI(
-                model="gpt-3.5-turbo",  # gpt-4o-mini yerine daha hızlı
+                model="gpt-4o-mini",
                 temperature=0,
                 api_key=api_key
             )
 
-            # Daha hızlı zincir
             chain = load_qa_chain(llm, chain_type="stuff")
             answer = chain.run(input_documents=docs, question=user_question)
 
-            st.write("💡 Cevap:")
-            st.write(answer)
+            st.subheader("💡 Cevap")
+            st.success(answer)  # yeşil kutuda göster
 
 if __name__ == "__main__":
     main()
