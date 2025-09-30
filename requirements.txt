@@ -3,6 +3,6 @@ PyPDF2
 python-dotenv
 langchain
 langchain-community
+langchain-openai
 openai
 faiss-cpu
-pydantic
