@@ -9,26 +9,6 @@ from langchain.chains.question_answering import load_qa_chain
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
     
-    # CSS ile "Browse files" yazısını değiştirme
-    st.markdown(
-        """
-        <style>
-        button[data-testid="stFileUploaderBrowseButton"] {
-            background-color: #2e86de;
-            color: white;
-            border-radius: 8px;
-        }
-        button[data-testid="stFileUploaderBrowseButton"]::after {
-            content: " Dosya Seç";
-        }
-        button[data-testid="stFileUploaderBrowseButton"] > div {
-            display: none;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
     # Header ve logo yan yana
     col1, col2 = st.columns([1, 6])
     with col1:
@@ -42,7 +22,7 @@ def main():
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
-    uploaded_file = st.file_uploader("📂 PDF yükleyin", type="pdf")
+    uploaded_file = st.file_uploader("Bir PDF yükleyin", type="pdf")
     if uploaded_file is not None:
         pdf_reader = PdfReader(uploaded_file)
         text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
@@ -62,7 +42,7 @@ def main():
             openai_api_key=api_key
         )
 
-        # FAISS vektör veritabanı (cache'li)
+        # FAISS vektör veritabanı
         @st.cache_resource
         def create_vectorstore(chunks, embeddings):
             return FAISS.from_texts(chunks, embeddings)
