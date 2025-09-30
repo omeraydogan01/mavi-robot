@@ -1,58 +1,71 @@
+
 import os
+from dotenv import load_dotenv
 import streamlit as st
 from PyPDF2 import PdfReader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.text_splitter import CharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 
+# .env dosyasını yükle (lokal çalışmada)
+load_dotenv()
+api_key = os.getenv("OPENAI_API_KEY")
+
 def main():
-    st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
-    st.header("🤖 PDF'inle Sohbet Et")
+    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
+    # Header ve logo yan yana
+    col1, col2 = st.columns([1, 6])
+    with col1:
+        st.image("logo.png", width=40)  # logo.png dosyasının yolu ve boyutu
+    with col2:
+        st.header("Dokümana Soru Sor")
 
-    # 🔑 API key'i Streamlit secrets veya ortam değişkeninden al
-    api_key = os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
-
-    uploaded_file = st.file_uploader("Bir PDF yükleyin", type="pdf")
-    if uploaded_file is not None:
-        pdf_reader = PdfReader(uploaded_file)
+    # PDF yükleme
+    pdf = st.file_uploader("Dokümman Yükle", type="pdf")
+    if pdf is not None:
+        pdf_reader = PdfReader(pdf)
         text = ""
         for page in pdf_reader.pages:
-            text += page.extract_text()
+            if page.extract_text():
+                text += page.extract_text()
 
-        # ✅ Recursive splitter ile daha iyi parçalama
-        text_splitter = RecursiveCharacterTextSplitter(
+        # Metin parçalama
+        text_splitter = CharacterTextSplitter(
+            separator="\n",
             chunk_size=1000,
-            chunk_overlap=200
+            chunk_overlap=200,
+            length_function=len
         )
         chunks = text_splitter.split_text(text)
 
-        # ✅ Daha büyük embedding modeli
+        # Embeddings
         embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-large",
+            model="text-embedding-3-small",
             openai_api_key=api_key
         )
+        knowledge_base = FAISS.from_texts(chunks, embeddings)
 
-        # ✅ FAISS vektör veritabanı
-        vectorstore = FAISS.from_texts(chunks, embeddings)
-
-        # Kullanıcıdan soru al
-        user_question = st.text_input("Sorunuzu buraya yazın:")
-
+        # Kullanıcı sorusu
+        user_question = st.text_input("PDF hakkında sorunu yaz 👇")
         if user_question:
-            docs = vectorstore.similarity_search(user_question, k=5)  # 🔹 daha fazla chunk getir
+            docs = knowledge_base.similarity_search(user_question)
+
+            # LLM
             llm = ChatOpenAI(
-                model="gpt-4o-mini",
+                model="gpt-3.5-turbo",
                 temperature=0,
-                api_key=api_key
+                openai_api_key=api_key
+            )
+            chain = load_qa_chain(llm, chain_type="stuff")
+
+            # Cevap üret (invoke ile)
+            response = chain.invoke(
+                {"input_documents": docs, "question": user_question}
             )
 
-            # ✅ Daha güçlü chain (map_reduce veya refine da seçilebilir)
-            chain = load_qa_chain(llm, chain_type="map_reduce")
-            answer = chain.run(input_documents=docs, question=user_question)
-
-            st.write("💡 Cevap:")
-            st.write(answer)
+            st.write("### 📌 Cevap:")
+            st.write(response["output_text"])
 
 if __name__ == "__main__":
     main()
