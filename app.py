@@ -49,7 +49,7 @@ def main():
         
         vectorstore = create_vectorstore(chunks, embeddings)
 
-        user_question = st.text_area("Sorunuzu yazın 👇", height=150)
+        user_question = st.text_area("Sorunuzu yazın 👇", height=130)
 
         if user_question:
             # Daha fazla chunk → daha sağlam cevap
