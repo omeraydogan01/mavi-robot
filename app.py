@@ -9,10 +9,23 @@ from langchain.chains.question_answering import load_qa_chain
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
     
-    # CSS - sadece soru alanını özelleştir
+    # CSS - Browse files butonunu ve soru alanını özelleştir
     st.markdown(
         """
         <style>
+        /* PDF yükle butonu */
+        button[data-testid="stFileUploaderBrowseButton"] {
+            background-color: #2e86de;
+            color: white;
+            border-radius: 8px;
+        }
+        button[data-testid="stFileUploaderBrowseButton"]::after {
+            content: " Dosya Seç";
+        }
+        button[data-testid="stFileUploaderBrowseButton"] > div {
+            display: none;
+        }
+
         /* Soru alanı mavi çerçeve */
         div[data-testid="stTextArea"] textarea {
             border: 3px solid #1E90FF;
@@ -80,4 +93,10 @@ def main():
             )
 
             chain = load_qa_chain(llm, chain_type="stuff")
-            answer = chain.run(input_documents=docs, question=_
+            answer = chain.run(input_documents=docs, question=user_question)
+
+            st.subheader("💡 Cevap")
+            st.success(answer)  # yeşil kutuda göster
+
+if __name__ == "__main__":
+    main()
