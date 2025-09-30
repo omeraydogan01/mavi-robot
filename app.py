@@ -7,6 +7,7 @@ from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 
 # Lokal için .env dosyası
 load_dotenv()
