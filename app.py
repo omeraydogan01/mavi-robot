@@ -11,32 +11,19 @@ def main():
     
     # CSS - Browse files butonunu ve soru alanını özelleştir
     st.markdown(
-        """
-        <style>
-        /* PDF yükle butonu */
-        button[data-testid="stFileUploaderBrowseButton"] {
-            background-color: #2e86de;
-            color: white;
-            border-radius: 8px;
-        }
-        button[data-testid="stFileUploaderBrowseButton"]::after {
-            content: " Dosya Seç";
-        }
-        button[data-testid="stFileUploaderBrowseButton"] > div {
-            display: none;
-        }
-
-        /* Soru alanı mavi çerçeve */
-        div[data-testid="stTextArea"] textarea {
-            border: 3px solid #1E90FF;
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 16px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    """
+    <style>
+    /* Text input mavi kalın çerçeve */
+    div[data-testid="stTextInput"] > div > input {
+        border: 3px solid #1E90FF;  /* mavi kalın çerçeve */
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 16px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
     # Header ve logo yan yana
     col1, col2 = st.columns([1, 6])
