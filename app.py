@@ -1,24 +1,18 @@
 import os
-import streamlit as st
 from dotenv import load_dotenv
+import streamlit as st
 from PyPDF2 import PdfReader
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 
-# Lokal için .env dosyası
+# .env dosyasını yükle (lokal çalışmada)
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
-# Streamlit Cloud secrets
-if "OPENAI_API_KEY" in st.secrets:
-    api_key = st.secrets["OPENAI_API_KEY"]
-
 def main():
-    st.set_page_config(page_title="PDF Chatbot", page_icon="logo.png")
+    st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
     st.header("📄 PDF'inle Sohbet Et")
 
     # PDF yükleme
@@ -27,11 +21,10 @@ def main():
         pdf_reader = PdfReader(pdf)
         text = ""
         for page in pdf_reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text
+            if page.extract_text():
+                text += page.extract_text()
 
-        # Metni parçalara böl
+        # Metin parçalama
         text_splitter = CharacterTextSplitter(
             separator="\n",
             chunk_size=1000,
@@ -40,10 +33,10 @@ def main():
         )
         chunks = text_splitter.split_text(text)
 
-        # OpenAI Embeddings
+        # Embeddings
         embeddings = OpenAIEmbeddings(
-            model_name="text-embedding-3-small",  # ⚠️ model_name kullan
-            openai_api_key=api_key               # ⚠️ openai_api_key kullan
+            model="text-embedding-3-small",
+            openai_api_key=api_key
         )
         knowledge_base = FAISS.from_texts(chunks, embeddings)
 
@@ -52,19 +45,21 @@ def main():
         if user_question:
             docs = knowledge_base.similarity_search(user_question)
 
-            # Chat LLM
+            # LLM
             llm = ChatOpenAI(
-                model_name="gpt-3.5-turbo",
+                model="gpt-3.5-turbo",
                 temperature=0,
                 openai_api_key=api_key
             )
             chain = load_qa_chain(llm, chain_type="stuff")
 
-            # Cevap üret
-            response = chain.run(input_documents=docs, question=user_question)
+            # Cevap üret (invoke ile)
+            response = chain.invoke(
+                {"input_documents": docs, "question": user_question}
+            )
 
             st.write("### 📌 Cevap:")
-            st.write(response)
+            st.write(response["output_text"])
 
 if __name__ == "__main__":
     main()
