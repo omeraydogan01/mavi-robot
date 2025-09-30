@@ -9,21 +9,21 @@ from langchain.chains.question_answering import load_qa_chain
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
     
-    # CSS - Browse files butonunu ve soru alanını özelleştir
+    # CSS - sadece text_input mavi kalın çerçeve
     st.markdown(
-    """
-    <style>
-    /* Text input mavi kalın çerçeve */
-    div[data-testid="stTextInput"] > div > input {
-        border: 3px solid #1E90FF;  /* mavi kalın çerçeve */
-        border-radius: 8px;
-        padding: 10px;
-        font-size: 16px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+        """
+        <style>
+        /* Text input mavi kalın çerçeve */
+        div[data-testid="stTextInput"] > div > input {
+            border: 3px solid #1E90FF;  /* mavi kalın çerçeve */
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 16px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 
     # Header ve logo yan yana
     col1, col2 = st.columns([1, 6])
@@ -65,7 +65,7 @@ def main():
         
         vectorstore = create_vectorstore(chunks, embeddings)
 
-        # Kullanıcı sorusu (mavi çerçeveli alan)
+        # Kullanıcı sorusu (mavi kalın çerçeveli, Enter ile gönderim)
         user_question = st.text_input("Sorunuzu yazın 👇")
 
         if user_question:
