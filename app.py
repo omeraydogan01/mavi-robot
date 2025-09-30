@@ -14,7 +14,7 @@ def main():
     with col1:
         st.image("logo.png", width=40)  # logo.png dosyasının yolu ve boyutu
     with col2:
-        st.header("Soru Sor")
+        st.header("Mavi Soru Robotu")
 
     # API key'i Streamlit secrets veya ortam değişkeninden al
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
