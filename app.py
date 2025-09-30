@@ -1,6 +1,7 @@
 import os
 import streamlit as st
 from PyPDF2 import PdfReader
+from docx import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
@@ -35,11 +36,21 @@ def main():
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
-    uploaded_file = st.file_uploader("📂 Doküman yükleyin", type="pdf")
+    uploaded_file = st.file_uploader("📂 Doküman yükleyin", type=["pdf", "docx"])
     if uploaded_file is not None:
-        pdf_reader = PdfReader(uploaded_file)
-        text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
-        st.info(f"📄 Yüklenen doküman toplam **{len(pdf_reader.pages)}** sayfa içeriyor.")
+        file_extension = uploaded_file.name.split(".")[-1].lower()
+        
+        if file_extension == "pdf":
+            pdf_reader = PdfReader(uploaded_file)
+            text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
+        elif file_extension == "docx":
+            doc = Document(uploaded_file)
+            text = "\n".join([para.text for para in doc.paragraphs])
+        else:
+            st.error("Sadece PDF veya Word dosyaları yükleyebilirsiniz.")
+            st.stop()
+        
+        st.info(f"📄 Yüklenen doküman toplam **{len(text.splitlines())}** satır içeriyor.")
 
         # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
@@ -57,7 +68,7 @@ def main():
 
         # Kullanıcı sorusu formu (mavi çerçeve + Enter ile gönderim)
         with st.form("question_form", clear_on_submit=True):
-            user_question = st.text_area("Sorunuzu yazın 👇", height=110)
+            user_question = st.text_area("Sorunuzu yazın 👇", height=130)
             submitted = st.form_submit_button("Sor")
 
             if submitted and user_question:
