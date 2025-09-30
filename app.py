@@ -27,7 +27,7 @@ def main():
         pdf_reader = PdfReader(uploaded_file)
         text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
         
-        st.info(f"📄 Yüklenen PDF toplam **{len(pdf_reader.pages)}** sayfa içeriyor.")
+        st.info(f"📄 Yüklenen doküman toplam **{len(pdf_reader.pages)}** sayfa içeriyor.")
 
         # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(
