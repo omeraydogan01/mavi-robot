@@ -12,11 +12,16 @@ load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
 def main():
-    st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
-    st.header("📄 PDF'inle Sohbet Et")
+    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
+    # Header ve logo yan yana
+    col1, col2 = st.columns([1, 6])
+    with col1:
+        st.image("logo.png", width=40)  # logo.png dosyasının yolu ve boyutu
+    with col2:
+        st.header("Dokümana Soru Sor")
 
     # PDF yükleme
-    pdf = st.file_uploader("PDF yükle", type="pdf")
+    pdf = st.file_uploader("Dokümman Yükle", type="pdf")
     if pdf is not None:
         pdf_reader = PdfReader(pdf)
         text = ""
