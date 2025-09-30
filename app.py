@@ -7,26 +7,26 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 
 def main():
-    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
+    st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
     
-    # Header ve logo yan yana
+    # Header ve logo
     col1, col2 = st.columns([1, 6])
     with col1:
-        st.image("logo.png", width=110)  # logo.png dosyasının yolu ve boyutu
+        st.image("logo.png", width=60)  # Logoyu biraz büyüttük
     with col2:
-        st.header("Mavi Soru Robotu")
+        st.header("📚 PDF ile Hızlı Sohbet")
 
     # API key'i Streamlit secrets veya ortam değişkeninden al
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
 
-    uploaded_file = st.file_uploader("Bir Doküman Yükleyin", type="pdf")
+    uploaded_file = st.file_uploader("Bir PDF yükleyin", type="pdf")
     if uploaded_file is not None:
         pdf_reader = PdfReader(uploaded_file)
         text = "".join([page.extract_text() for page in pdf_reader.pages])
 
         # Başlık/alt başlıkları koruyan splitter
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
+            chunk_size=2000,  # Daha büyük chunk → daha az parça → hızlı
             chunk_overlap=200
         )
         chunks = text_splitter.split_text(text)
@@ -43,18 +43,18 @@ def main():
         user_question = st.text_input("Sorunuzu yazın 👇")
 
         if user_question:
-            # Daha fazla chunk getir → daha doğru sonuç
-            docs = vectorstore.similarity_search(user_question, k=5)
+            # Daha az chunk getir → daha hızlı
+            docs = vectorstore.similarity_search(user_question, k=3)
 
-            # Daha güçlü LLM
+            # Daha hızlı LLM
             llm = ChatOpenAI(
-                model="gpt-4o-mini",
+                model="gpt-3.5-turbo",  # gpt-4o-mini yerine daha hızlı
                 temperature=0,
                 api_key=api_key
             )
 
-            # Daha derin çıkarım için map_reduce zinciri
-            chain = load_qa_chain(llm, chain_type="map_reduce")
+            # Daha hızlı zincir
+            chain = load_qa_chain(llm, chain_type="stuff")
             answer = chain.run(input_documents=docs, question=user_question)
 
             st.write("💡 Cevap:")
