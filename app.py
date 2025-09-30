@@ -57,7 +57,7 @@ def main():
 
         # Kullanıcı sorusu formu (mavi çerçeve + Enter ile gönderim)
         with st.form("question_form", clear_on_submit=True):
-            user_question = st.text_area("Sorunuzu yazın 👇", height=130)
+            user_question = st.text_area("Sorunuzu yazın 👇", height=110)
             submitted = st.form_submit_button("Sor")
 
             if submitted and user_question:
