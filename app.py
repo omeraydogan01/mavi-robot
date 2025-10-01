@@ -7,6 +7,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 from datetime import datetime
+from io import BytesIO
 
 LOG_FILE = "logs.csv"
 
@@ -24,22 +25,34 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_csv(LOG_FILE, index=False)
 
-def show_report():
-    """En çok sorulan soruları raporla"""
-    st.subheader("📊 Raporlama")
+def download_report():
+    """Raporu CSV olarak indir"""
     if os.path.exists(LOG_FILE):
         df = pd.read_csv(LOG_FILE)
-        st.write("Toplam soru sayısı:", len(df))
 
-        top_questions = df["question"].value_counts().head(5)
-        st.write("En çok sorulan sorular:")
-        st.table(top_questions)
-    else:
-        st.info("Henüz rapor oluşturulacak veri yok. Lütfen birkaç soru sorun.")
+        # En çok sorulan sorular analizi
+        top_questions = df["question"].value_counts().reset_index()
+        top_questions.columns = ["question", "count"]
+
+        # Bellekte CSV dosyası oluştur
+        csv_buffer = BytesIO()
+        df.to_csv(csv_buffer, index=False, encoding="utf-8-sig")
+        csv_buffer.seek(0)
+
+        st.download_button(
+            label="📥 Raporu İndir (CSV)",
+            data=csv_buffer,
+            file_name="soru_raporu.csv",
+            mime="text/csv"
+        )
+
+        # Opsiyonel: sadece ilk 5 soruyu özet tablo olarak göster
+        st.write("📊 En çok sorulan sorular (ilk 5):")
+        st.table(top_questions.head(5))
 
 def main():
     st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
-    st.header("📚 PDF ile Sohbet ve Raporlama")
+    st.header("📚 PDF ile Sohbet + Raporlama")
 
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
 
@@ -68,8 +81,8 @@ def main():
             # 📌 Log kaydı
             log_question(user_question, answer)
 
-    # 📊 Rapor kısmı her zaman göster
-    show_report()
+    # Her zaman rapor indirme butonu görünsün
+    download_report()
 
 if __name__ == "__main__":
     main()
