@@ -27,6 +27,28 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
+    # Sidebar: Rapor indirme
+    st.sidebar.header("📑 Raporlama")
+    password = st.sidebar.text_input("Rapor şifresi", type="password")
+    if st.sidebar.button("📥 Raporu Excel Olarak İndir"):
+        if password == "1234":  # İstediğin şifreyi değiştir
+            if qa_logs:
+                df = pd.DataFrame(qa_logs)
+                buffer = BytesIO()
+                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                    df.to_excel(writer, index=False, sheet_name="Q&A Logs")
+                st.sidebar.download_button(
+                    label="📊 Excel Raporunu İndir",
+                    data=buffer,
+                    file_name="rapor.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download-excel"
+                )
+            else:
+                st.sidebar.warning("Henüz hiç soru sorulmadı.")
+        else:
+            st.sidebar.error("❌ Hatalı şifre!")
+
     # Header ve logo yan yana
     col1, col2 = st.columns([1, 6])
     with col1:
@@ -87,28 +109,6 @@ def main():
                 "question": user_question,
                 "answer": answer
             })
-
-    # 📑 Rapor indirme expander (varsayılan kapalı)
-    with st.expander("📑 Raporlama", expanded=False):
-        password = st.text_input("Rapor şifresi", type="password")
-        if st.button("📥 Raporu Excel Olarak İndir"):
-            if password == "1234":  # İstediğin şifreyi değiştir
-                if qa_logs:
-                    df = pd.DataFrame(qa_logs)
-                    buffer = BytesIO()
-                    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                        df.to_excel(writer, index=False, sheet_name="Q&A Logs")
-                    st.download_button(
-                        label="📊 Excel Raporunu İndir",
-                        data=buffer,
-                        file_name="rapor.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="download-excel"
-                    )
-                else:
-                    st.warning("Henüz hiç soru sorulmadı.")
-            else:
-                st.error("❌ Hatalı şifre!")
 
 if __name__ == "__main__":
     main()
