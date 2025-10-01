@@ -10,7 +10,7 @@ from datetime import datetime
 from io import BytesIO
 
 LOG_FILE = "logs.csv"
-REPORT_PASSWORD = "1234"  # 📌 Burayı kendi şifrenle değiştir
+REPORT_PASSWORD = "1234"  # 📌 Şifreni buraya yaz
 
 def log_question(question, answer):
     df_new = pd.DataFrame([{
@@ -41,7 +41,7 @@ def download_report():
 
 def main():
     st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
-    st.header("📚 PDF ile Sohbet + Raporlama")
+    st.header("📚 PDF ile Sohbet")
 
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
 
@@ -69,11 +69,12 @@ def main():
 
             log_question(user_question, answer)
 
-    # 📌 Rapor için şifre kontrolü
-    with st.expander("🔑 Rapor İndirme"):
+    # 📌 Sidebar → rapor indirme alanı
+    with st.sidebar:
+        st.subheader("🔑 Rapor İndirme")
         password_input = st.text_input("Şifreyi giriniz:", type="password")
         if password_input == REPORT_PASSWORD:
-            st.success("✅ Doğru şifre, raporu indirebilirsiniz.")
+            st.success("✅ Doğru şifre")
             download_report()
         elif password_input:
             st.error("❌ Yanlış şifre")
