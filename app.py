@@ -1,81 +1,73 @@
 import os
 import streamlit as st
+import pandas as pd
 from PyPDF2 import PdfReader
-from docx import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
+from datetime import datetime
+
+LOG_FILE = "logs.csv"
+
+def log_question(question, answer):
+    """Soruları CSV'ye kaydet"""
+    df_new = pd.DataFrame([{
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "question": question,
+        "answer": answer
+    }])
+    if os.path.exists(LOG_FILE):
+        df_old = pd.read_csv(LOG_FILE)
+        df_all = pd.concat([df_old, df_new], ignore_index=True)
+    else:
+        df_all = df_new
+    df_all.to_csv(LOG_FILE, index=False)
+
+def show_report():
+    """En çok sorulan soruları raporla"""
+    if os.path.exists(LOG_FILE):
+        df = pd.read_csv(LOG_FILE)
+        st.subheader("📊 Raporlama")
+        st.write("Toplam soru sayısı:", len(df))
+        
+        top_questions = df["question"].value_counts().head(5)
+        st.write("En çok sorulan sorular:")
+        st.table(top_questions)
 
 def main():
-    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
+    st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
+    st.header("📚 PDF ile Sohbet ve Raporlama")
 
-    # CSS - text_input mavi kalın çerçeve
-    st.markdown("""
-        <style>
-        div[data-testid="stTextInput"] > div > input {
-            border: 3px solid #1E90FF;
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 16px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    api_key = os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
 
-    # Header ve logo yan yana
-    col1, col2 = st.columns([1, 6])
-    with col1:
-        st.image("logo.png", width=120)
-    with col2:
-        st.header("Dokümana Soru Sor")
-
-    # API key kontrolü
-    api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
-    if not api_key:
-        st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
-        st.stop()
-
-    uploaded_file = st.file_uploader("📂 Doküman yükleyin", type=["pdf", "docx"])
+    uploaded_file = st.file_uploader("Bir PDF yükleyin", type="pdf")
     if uploaded_file is not None:
-        file_extension = uploaded_file.name.split(".")[-1].lower()
-        
-        if file_extension == "pdf":
-            pdf_reader = PdfReader(uploaded_file)
-            text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
-        elif file_extension == "docx":
-            doc = Document(uploaded_file)
-            text = "\n".join([para.text for para in doc.paragraphs])
-        else:
-            st.error("Sadece PDF veya Word dosyaları yükleyebilirsiniz.")
-            st.stop()
-        
-        st.info(f"📄 Yüklenen doküman toplam **{len(text.splitlines())}** satır içeriyor.")
+        pdf_reader = PdfReader(uploaded_file)
+        text = "".join([page.extract_text() for page in pdf_reader.pages])
 
-        # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(text)
 
-        # Embedding modeli
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
+        vectorstore = FAISS.from_texts(chunks, embeddings)
 
-        # FAISS vektör veritabanı (cache)
-        @st.cache_resource
-        def create_vectorstore(chunks, embeddings):
-            return FAISS.from_texts(chunks, embeddings)
-
-        vectorstore = create_vectorstore(chunks, embeddings)
-
-        # Kullanıcı sorusu (tek satır input)
         user_question = st.text_input("Sorunuzu yazın 👇")
 
         if user_question:
-            docs = vectorstore.similarity_search(user_question, k=6)
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
+            docs = vectorstore.similarity_search(user_question, k=3)
+            llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, api_key=api_key)
             chain = load_qa_chain(llm, chain_type="stuff")
             answer = chain.run(input_documents=docs, question=user_question)
 
-            st.subheader("💡 Cevap")
-            st.success(answer)
+            st.write("💡 Cevap:")
+            st.write(answer)
+
+            # 📌 Log kaydı
+            log_question(user_question, answer)
+
+    # Raporu göster
+    show_report()
 
 if __name__ == "__main__":
     main()
