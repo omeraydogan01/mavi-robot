@@ -92,7 +92,7 @@ def main():
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            docs = vectorstore.similarity_search(user_question, k=5)
+            docs = vectorstore.similarity_search(user_question, k=6)
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             chain = load_qa_chain(llm, chain_type="stuff")
             answer = chain.run(input_documents=docs, question=user_question)
