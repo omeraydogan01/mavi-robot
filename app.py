@@ -8,12 +8,20 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
+from datetime import datetime
 
-# Soru-cevap logları
+# Global log list
 qa_logs = []
 
+def log_question(question, answer):
+    qa_logs.append({
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "question": question,
+        "answer": answer
+    })
+
 def main():
-    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png", layout="wide")
+    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
 
     # CSS - text_input mavi kalın çerçeve
     st.markdown("""
@@ -26,28 +34,6 @@ def main():
         }
         </style>
     """, unsafe_allow_html=True)
-
-    # Sidebar: Rapor indirme
-    st.sidebar.header("📑 Raporlama")
-    password = st.sidebar.text_input("Rapor şifresi", type="password")
-    if st.sidebar.button("📥 Raporu Excel Olarak İndir"):
-        if password == "1234":  # İstediğin şifreyi değiştir
-            if qa_logs:
-                df = pd.DataFrame(qa_logs)
-                buffer = BytesIO()
-                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                    df.to_excel(writer, index=False, sheet_name="Q&A Logs")
-                st.sidebar.download_button(
-                    label="📊 Excel Raporunu İndir",
-                    data=buffer,
-                    file_name="rapor.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="download-excel"
-                )
-            else:
-                st.sidebar.warning("Henüz hiç soru sorulmadı.")
-        else:
-            st.sidebar.error("❌ Hatalı şifre!")
 
     # Header ve logo yan yana
     col1, col2 = st.columns([1, 6])
@@ -105,10 +91,28 @@ def main():
             st.success(answer)
 
             # Log kaydı
-            qa_logs.append({
-                "question": user_question,
-                "answer": answer
-            })
+            log_question(user_question, answer)
+
+    # Sidebar’da rapor indirme (varsayılan kapalı)
+    with st.sidebar.expander("📑 Raporlama", expanded=False):
+        password = st.text_input("Rapor şifresi", type="password")
+        if st.button("📥 Raporu Excel Olarak İndir"):
+            if password == "1234":  # Şifreyi değiştir
+                if qa_logs:
+                    df = pd.DataFrame(qa_logs)
+                    buffer = BytesIO()
+                    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                        df.to_excel(writer, index=False, sheet_name="Q&A Logs")
+                    st.download_button(
+                        label="📊 Excel Raporunu İndir",
+                        data=buffer,
+                        file_name="rapor.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                else:
+                    st.warning("Henüz hiç soru sorulmadı.")
+            else:
+                st.error("❌ Hatalı şifre!")
 
 if __name__ == "__main__":
     main()
