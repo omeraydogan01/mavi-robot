@@ -10,9 +10,9 @@ from datetime import datetime
 from io import BytesIO
 
 LOG_FILE = "logs.csv"
+REPORT_PASSWORD = "1234"  # 📌 Burayı kendi şifrenle değiştir
 
 def log_question(question, answer):
-    """Soruları CSV'ye kaydet"""
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "question": question,
@@ -26,15 +26,8 @@ def log_question(question, answer):
     df_all.to_csv(LOG_FILE, index=False)
 
 def download_report():
-    """Raporu CSV olarak indir"""
     if os.path.exists(LOG_FILE):
         df = pd.read_csv(LOG_FILE)
-
-        # En çok sorulan sorular analizi
-        top_questions = df["question"].value_counts().reset_index()
-        top_questions.columns = ["question", "count"]
-
-        # Bellekte CSV dosyası oluştur
         csv_buffer = BytesIO()
         df.to_csv(csv_buffer, index=False, encoding="utf-8-sig")
         csv_buffer.seek(0)
@@ -45,10 +38,6 @@ def download_report():
             file_name="soru_raporu.csv",
             mime="text/csv"
         )
-
-        # Opsiyonel: sadece ilk 5 soruyu özet tablo olarak göster
-        st.write("📊 En çok sorulan sorular (ilk 5):")
-        st.table(top_questions.head(5))
 
 def main():
     st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
@@ -78,11 +67,16 @@ def main():
             st.write("💡 Cevap:")
             st.write(answer)
 
-            # 📌 Log kaydı
             log_question(user_question, answer)
 
-    # Her zaman rapor indirme butonu görünsün
-    download_report()
+    # 📌 Rapor için şifre kontrolü
+    with st.expander("🔑 Rapor İndirme"):
+        password_input = st.text_input("Şifreyi giriniz:", type="password")
+        if password_input == REPORT_PASSWORD:
+            st.success("✅ Doğru şifre, raporu indirebilirsiniz.")
+            download_report()
+        elif password_input:
+            st.error("❌ Yanlış şifre")
 
 if __name__ == "__main__":
     main()
