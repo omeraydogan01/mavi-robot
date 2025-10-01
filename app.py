@@ -26,14 +26,16 @@ def log_question(question, answer):
 
 def show_report():
     """En çok sorulan soruları raporla"""
+    st.subheader("📊 Raporlama")
     if os.path.exists(LOG_FILE):
         df = pd.read_csv(LOG_FILE)
-        st.subheader("📊 Raporlama")
         st.write("Toplam soru sayısı:", len(df))
-        
+
         top_questions = df["question"].value_counts().head(5)
         st.write("En çok sorulan sorular:")
         st.table(top_questions)
+    else:
+        st.info("Henüz rapor oluşturulacak veri yok. Lütfen birkaç soru sorun.")
 
 def main():
     st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
@@ -66,7 +68,7 @@ def main():
             # 📌 Log kaydı
             log_question(user_question, answer)
 
-    # Raporu göster
+    # 📊 Rapor kısmı her zaman göster
     show_report()
 
 if __name__ == "__main__":
