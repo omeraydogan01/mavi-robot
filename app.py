@@ -43,8 +43,26 @@ def download_report_excel():
         )
 
 def main():
-    st.set_page_config(page_title="PDF Chatbot", page_icon="📄")
-    st.header("📚 PDF ile Sohbet")
+    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
+
+    # CSS - text_input mavi kalın çerçeve
+    st.markdown("""
+        <style>
+        div[data-testid="stTextInput"] > div > input {
+            border: 3px solid #1E90FF;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 16px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Header ve logo yan yana
+    col1, col2 = st.columns([1, 6])
+    with col1:
+        st.image("logo.png", width=120)
+    with col2:
+        st.header("Dokümana Soru Sor")
 
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
 
