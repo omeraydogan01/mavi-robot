@@ -13,8 +13,8 @@ from io import BytesIO
 LOG_FILE = "logs.xlsx"
 
 # Secrets şifreleri
-REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "süpergizlisifre123")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "süpergizlisifre123")  # Sıfırlama şifresi
+REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
 
 # Log kaydetme
 def log_question(question, answer):
