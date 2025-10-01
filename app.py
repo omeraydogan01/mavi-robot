@@ -8,20 +8,12 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
-from datetime import datetime
 
-# Global log list
+# Soru-cevap logları
 qa_logs = []
 
-def log_question(question, answer):
-    qa_logs.append({
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "question": question,
-        "answer": answer
-    })
-
 def main():
-    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
+    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png", layout="wide")
 
     # CSS - text_input mavi kalın çerçeve
     st.markdown("""
@@ -91,13 +83,16 @@ def main():
             st.success(answer)
 
             # Log kaydı
-            log_question(user_question, answer)
+            qa_logs.append({
+                "question": user_question,
+                "answer": answer
+            })
 
-    # Sidebar’da rapor indirme (varsayılan kapalı)
-    with st.sidebar.expander("📑 Raporlama", expanded=False):
+    # 📑 Rapor indirme expander (varsayılan kapalı)
+    with st.expander("📑 Raporlama", expanded=False):
         password = st.text_input("Rapor şifresi", type="password")
         if st.button("📥 Raporu Excel Olarak İndir"):
-            if password == "1234":  # Şifreyi değiştir
+            if password == "1234":  # İstediğin şifreyi değiştir
                 if qa_logs:
                     df = pd.DataFrame(qa_logs)
                     buffer = BytesIO()
@@ -107,7 +102,8 @@ def main():
                         label="📊 Excel Raporunu İndir",
                         data=buffer,
                         file_name="rapor.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="download-excel"
                     )
                 else:
                     st.warning("Henüz hiç soru sorulmadı.")
