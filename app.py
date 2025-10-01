@@ -10,11 +10,13 @@ from langchain.chains.question_answering import load_qa_chain
 from datetime import datetime
 from io import BytesIO
 
-# Sabitler
-LOG_FILE = "logs.csv"
-REPORT_PASSWORD_KEY = "REPORT_PASSWORD"  # Streamlit secrets içindeki key
+LOG_FILE = "logs.xlsx"
 
-# Soru-cevapları kaydet
+# Secrets şifreleri
+REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "süpergizlisifre123")
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "süpergizlisifre123")  # Sıfırlama şifresi
+
+# Log kaydetme
 def log_question(question, answer):
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -22,40 +24,46 @@ def log_question(question, answer):
         "answer": answer
     }])
     if os.path.exists(LOG_FILE):
-        df_old = pd.read_csv(LOG_FILE)
+        df_old = pd.read_excel(LOG_FILE)
         df_all = pd.concat([df_old, df_new], ignore_index=True)
     else:
         df_all = df_new
-    df_all.to_csv(LOG_FILE, index=False)
+    df_all.to_excel(LOG_FILE, index=False)
 
-# Raporu Excel'e çevir
-def generate_excel():
-    if not os.path.exists(LOG_FILE):
-        return None
-    df = pd.read_csv(LOG_FILE)
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Rapor")
-    return output.getvalue()
+# Rapor indirilebilir Excel dosyası
+def get_report():
+    if os.path.exists(LOG_FILE):
+        df = pd.read_excel(LOG_FILE)
+        output = BytesIO()
+        df.to_excel(output, index=False)
+        output.seek(0)
+        return output
+    return None
+
+# Sıfırlama
+def reset_logs():
+    if os.path.exists(LOG_FILE):
+        os.remove(LOG_FILE)
+        st.success("✅ Soru-cevap geçmişi sıfırlandı!")
 
 def main():
-    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png", layout="wide")
-    
+    st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
+
     # Header ve logo
-    col1, col2 = st.columns([1, 6])
+    col1, col2 = st.columns([1,6])
     with col1:
         st.image("logo.png", width=120)
     with col2:
-        st.header("📚 Dokümana Soru Sor")
+        st.header("Dokümana Soru Sor")
 
-    # API Key
+    # API key
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
-        st.error("⚠️ API key bulunamadı! Secrets veya environment değişkeni ekleyin.")
+        st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
-    # PDF/Word yükleme
-    uploaded_file = st.file_uploader("📂 Doküman yükleyin", type=["pdf", "docx"])
+    # Dosya yükleme
+    uploaded_file = st.file_uploader("📂 Doküman yükleyin", type=["pdf","docx"])
     if uploaded_file is not None:
         ext = uploaded_file.name.split(".")[-1].lower()
         if ext == "pdf":
@@ -67,14 +75,15 @@ def main():
         else:
             st.error("Sadece PDF veya Word yükleyebilirsiniz.")
             st.stop()
+
         st.info(f"📄 Doküman {len(text.splitlines())} satır içeriyor.")
 
         # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(text)
 
-        # Embeddings ve FAISS
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
+
         @st.cache_resource
         def create_vectorstore(chunks, embeddings):
             return FAISS.from_texts(chunks, embeddings)
@@ -85,31 +94,36 @@ def main():
         if user_question:
             docs = vectorstore.similarity_search(user_question, k=5)
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
-            chain = load_qa_chain(llm, chain_type="map_reduce")
+            chain = load_qa_chain(llm, chain_type="stuff")
             answer = chain.run(input_documents=docs, question=user_question)
-
             st.subheader("💡 Cevap")
             st.success(answer)
-
-            # Soru-cevap loglama
             log_question(user_question, answer)
 
-    # Sidebar: Rapor indir
-    with st.sidebar.expander("📊 Rapor İndir", expanded=False):
-        password = st.text_input("Şifreyi girin", type="password")
-        if password:
-            report_password = os.getenv(REPORT_PASSWORD_KEY) or st.secrets.get(REPORT_PASSWORD_KEY)
-            if password == report_password:
-                excel_data = generate_excel()
-                if excel_data:
+    # Sidebar: Rapor ve Sıfırlama
+    with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
+        st.subheader("📥 Rapor İndir")
+        report_pass = st.text_input("Rapor şifresi", type="password")
+        if st.button("📄 Excel İndir"):
+            if report_pass == REPORT_PASSWORD:
+                report_file = get_report()
+                if report_file:
                     st.download_button(
-                        label="📥 Excel olarak indir",
-                        data=excel_data,
-                        file_name="rapor.xlsx",
+                        label="Excel olarak indir",
+                        data=report_file,
+                        file_name="soru_cevap_raporu.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                 else:
-                    st.info("Henüz rapor yok.")
+                    st.info("Henüz kaydedilmiş soru yok.")
+            else:
+                st.error("❌ Yanlış şifre!")
+
+        st.subheader("⚠️ Soru Geçmişini Sıfırla")
+        reset_pass = st.text_input("Sıfırlama şifresi", type="password")
+        if st.button("🗑️ Sıfırla Geçmiş"):
+            if reset_pass == RESET_PASSWORD:
+                reset_logs()
             else:
                 st.error("❌ Yanlış şifre!")
 
