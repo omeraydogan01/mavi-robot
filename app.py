@@ -25,18 +25,21 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_csv(LOG_FILE, index=False)
 
-def download_report():
+def download_report_excel():
     if os.path.exists(LOG_FILE):
         df = pd.read_csv(LOG_FILE)
-        csv_buffer = BytesIO()
-        df.to_csv(csv_buffer, index=False, encoding="utf-8-sig")
-        csv_buffer.seek(0)
+
+        # 📌 Excel'e yazmak için buffer
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Sorular")
+        output.seek(0)
 
         st.download_button(
-            label="📥 Raporu İndir (CSV)",
-            data=csv_buffer,
-            file_name="soru_raporu.csv",
-            mime="text/csv"
+            label="📥 Raporu İndir (Excel)",
+            data=output,
+            file_name="soru_raporu.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
 def main():
@@ -75,7 +78,7 @@ def main():
         password_input = st.text_input("Şifreyi giriniz:", type="password")
         if password_input == REPORT_PASSWORD:
             st.success("✅ Doğru şifre")
-            download_report()
+            download_report_excel()
         elif password_input:
             st.error("❌ Yanlış şifre")
 
