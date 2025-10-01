@@ -1,24 +1,17 @@
 import os
 import streamlit as st
 import pandas as pd
-from io import BytesIO
 from PyPDF2 import PdfReader
 from docx import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
+from io import BytesIO
 from datetime import datetime
 
-# Global log list
+# Soruları ve cevapları loglamak için global liste
 qa_logs = []
-
-def log_question(question, answer):
-    qa_logs.append({
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "question": question,
-        "answer": answer
-    })
 
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
@@ -90,29 +83,33 @@ def main():
             st.subheader("💡 Cevap")
             st.success(answer)
 
-            # Log kaydı
-            log_question(user_question, answer)
+            # 📌 Soru ve cevabı log listesine ekle
+            qa_logs.append({
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "question": user_question,
+                "answer": answer
+            })
 
-    # Sidebar’da rapor indirme (varsayılan kapalı)
-    with st.sidebar.expander("📑 Raporlama", expanded=False):
-        password = st.text_input("Rapor şifresi", type="password")
-        if st.button("📥 Raporu Excel Olarak İndir"):
-            if password == "1234":  # Şifreyi değiştir
-                if qa_logs:
-                    df = pd.DataFrame(qa_logs)
-                    buffer = BytesIO()
-                    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                        df.to_excel(writer, index=False, sheet_name="Q&A Logs")
-                    st.download_button(
-                        label="📊 Excel Raporunu İndir",
-                        data=buffer,
-                        file_name="rapor.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                else:
-                    st.warning("Henüz hiç soru sorulmadı.")
+    # 📊 Rapor indirme kısmı (sidebar’da)
+    st.sidebar.header("📑 Raporlama")
+    password = st.sidebar.text_input("Rapor şifresi", type="password")
+    if st.sidebar.button("📥 Raporu Excel Olarak İndir"):
+        if password == "1234":  # 📌 şifreni buradan değiştirebilirsin
+            if qa_logs:
+                df = pd.DataFrame(qa_logs)
+                buffer = BytesIO()
+                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                    df.to_excel(writer, index=False, sheet_name="Q&A Logs")
+                st.sidebar.download_button(
+                    label="📊 Excel Raporunu İndir",
+                    data=buffer,
+                    file_name="rapor.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
             else:
-                st.error("❌ Hatalı şifre!")
+                st.sidebar.warning("Henüz hiç soru sorulmadı.")
+        else:
+            st.sidebar.error("❌ Hatalı şifre!")
 
 if __name__ == "__main__":
     main()
