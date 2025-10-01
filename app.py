@@ -2,45 +2,16 @@ import os
 import streamlit as st
 import pandas as pd
 from PyPDF2 import PdfReader
+from docx import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
-from datetime import datetime
 from io import BytesIO
+from datetime import datetime
 
-LOG_FILE = "logs.csv"
-REPORT_PASSWORD = "1234"  # 📌 Şifreni buraya yaz
-
-def log_question(question, answer):
-    df_new = pd.DataFrame([{
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "question": question,
-        "answer": answer
-    }])
-    if os.path.exists(LOG_FILE):
-        df_old = pd.read_csv(LOG_FILE)
-        df_all = pd.concat([df_old, df_new], ignore_index=True)
-    else:
-        df_all = df_new
-    df_all.to_csv(LOG_FILE, index=False)
-
-def download_report_excel():
-    if os.path.exists(LOG_FILE):
-        df = pd.read_csv(LOG_FILE)
-
-        # 📌 Excel'e yazmak için buffer
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Sorular")
-        output.seek(0)
-
-        st.download_button(
-            label="📥 Raporu İndir (Excel)",
-            data=output,
-            file_name="soru_raporu.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+# Soruları ve cevapları loglamak için global liste
+qa_logs = []
 
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
@@ -64,41 +35,81 @@ def main():
     with col2:
         st.header("Dokümana Soru Sor")
 
-    api_key = os.getenv("OPENAI_API_KEY") or st.secrets["OPENAI_API_KEY"]
+    # API key kontrolü
+    api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
+    if not api_key:
+        st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
+        st.stop()
 
-    uploaded_file = st.file_uploader("Bir PDF yükleyin", type="pdf")
+    uploaded_file = st.file_uploader("📂 Doküman yükleyin", type=["pdf", "docx"])
     if uploaded_file is not None:
-        pdf_reader = PdfReader(uploaded_file)
-        text = "".join([page.extract_text() for page in pdf_reader.pages])
+        file_extension = uploaded_file.name.split(".")[-1].lower()
+        
+        if file_extension == "pdf":
+            pdf_reader = PdfReader(uploaded_file)
+            text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
+        elif file_extension == "docx":
+            doc = Document(uploaded_file)
+            text = "\n".join([para.text for para in doc.paragraphs])
+        else:
+            st.error("Sadece PDF veya Word dosyaları yükleyebilirsiniz.")
+            st.stop()
+        
+        st.info(f"📄 Yüklenen doküman toplam **{len(text.splitlines())}** satır içeriyor.")
 
+        # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(text)
 
+        # Embedding modeli
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
-        vectorstore = FAISS.from_texts(chunks, embeddings)
 
+        # FAISS vektör veritabanı (cache)
+        @st.cache_resource
+        def create_vectorstore(chunks, embeddings):
+            return FAISS.from_texts(chunks, embeddings)
+
+        vectorstore = create_vectorstore(chunks, embeddings)
+
+        # Kullanıcı sorusu (tek satır input)
         user_question = st.text_input("Sorunuzu yazın 👇")
 
         if user_question:
-            docs = vectorstore.similarity_search(user_question, k=3)
-            llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, api_key=api_key)
+            docs = vectorstore.similarity_search(user_question, k=6)
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             chain = load_qa_chain(llm, chain_type="stuff")
             answer = chain.run(input_documents=docs, question=user_question)
 
-            st.write("💡 Cevap:")
-            st.write(answer)
+            st.subheader("💡 Cevap")
+            st.success(answer)
 
-            log_question(user_question, answer)
+            # 📌 Soru ve cevabı log listesine ekle
+            qa_logs.append({
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "question": user_question,
+                "answer": answer
+            })
 
-    # 📌 Sidebar → rapor indirme alanı
-    with st.sidebar:
-        st.subheader("🔑 Rapor İndirme")
-        password_input = st.text_input("Şifreyi giriniz:", type="password")
-        if password_input == REPORT_PASSWORD:
-            st.success("✅ Doğru şifre")
-            download_report_excel()
-        elif password_input:
-            st.error("❌ Yanlış şifre")
+    # 📊 Rapor indirme kısmı (sidebar’da)
+    st.sidebar.header("📑 Raporlama")
+    password = st.sidebar.text_input("Rapor şifresi", type="password")
+    if st.sidebar.button("📥 Raporu Excel Olarak İndir"):
+        if password == "1234":  # 📌 şifreni buradan değiştirebilirsin
+            if qa_logs:
+                df = pd.DataFrame(qa_logs)
+                buffer = BytesIO()
+                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                    df.to_excel(writer, index=False, sheet_name="Q&A Logs")
+                st.sidebar.download_button(
+                    label="📊 Excel Raporunu İndir",
+                    data=buffer,
+                    file_name="rapor.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.sidebar.warning("Henüz hiç soru sorulmadı.")
+        else:
+            st.sidebar.error("❌ Hatalı şifre!")
 
 if __name__ == "__main__":
     main()
