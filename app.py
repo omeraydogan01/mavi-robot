@@ -14,7 +14,7 @@ LOG_FILE = "logs.xlsx"
 
 # Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
 # Log kaydetme
 def log_question(question, answer):
@@ -59,7 +59,7 @@ def main():
     # API key
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
-        st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
+        st.error("⚠️ API key bulunamadı.")
         st.stop()
 
     # Dosya yükleme
@@ -92,12 +92,30 @@ def main():
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
+            # Semantic + similarity search
             docs = vectorstore.similarity_search(user_question, k=6)
+
+            # Orijinal uzun cevap
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             chain = load_qa_chain(llm, chain_type="stuff")
             answer = chain.run(input_documents=docs, question=user_question)
-            st.subheader("💡 Cevap")
-            st.success(answer)
+
+            # Özetleme prompt
+            summary_prompt = f"""
+            Verilen cevabı kısa ve öz bir şekilde özetle.
+            Kullanıcıya yanıt: {answer}
+            """
+            summary = llm.predict(summary_prompt)
+
+            # Kaynak referansları
+            references = [f"Chunk {i+1}" for i in range(len(docs))]
+
+            st.subheader("💡 Cevap (Özetli)")
+            st.success(summary)
+
+            st.subheader("📚 Kaynaklar")
+            st.write(references)
+
             log_question(user_question, answer)
 
     # Sidebar: Rapor ve Sıfırlama
