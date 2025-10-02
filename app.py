@@ -17,11 +17,12 @@ REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
 RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
 
 # Log kaydetme
-def log_question(question, answer):
+def log_question(question, answer, score):
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "question": question,
-        "answer": answer
+        "answer": answer,
+        "confidence_score": score
     }])
     if os.path.exists(LOG_FILE):
         df_old = pd.read_excel(LOG_FILE)
@@ -45,6 +46,24 @@ def reset_logs():
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
         st.success("✅ Soru-cevap geçmişi sıfırlandı!")
+
+# Güven skoru hesaplama
+def calculate_confidence(answer, similarity_scores):
+    """
+    Basit kombinasyon:
+    - similarity_scores: doküman chunk'larıyla soru arasındaki benzerliklerin ortalaması
+    - answer: LLM'den self-evaluation prompt ile dönen skor
+    """
+    if not similarity_scores:
+        sim_score = 0
+    else:
+        sim_score = sum(similarity_scores)/len(similarity_scores)  # 0-1 arası
+
+    # LLM self-evaluation (saf örnek: answer içerisindeki "confidence" ifadesi)
+    # Burada basitçe sim_score ile %40 LLM etkisi kombine ediliyor
+    llm_score = 1  # şimdilik varsayılan 1, istersen self-evaluation prompt ekleyebilirsin
+    combined_score = 0.6*sim_score + 0.4*llm_score
+    return round(combined_score*100, 2)  # % olarak
 
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
@@ -92,13 +111,24 @@ def main():
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            docs = vectorstore.similarity_search(user_question, k=6)
+            docs = vectorstore.similarity_search_with_score(user_question, k=6)
+            # docs: [(Document, similarity_score)]
+            chunks_docs = [d[0] for d in docs]
+            similarity_scores = [d[1] for d in docs]
+
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             chain = load_qa_chain(llm, chain_type="stuff")
-            answer = chain.run(input_documents=docs, question=user_question)
+            answer = chain.run(input_documents=chunks_docs, question=user_question)
+
+            # Güven skoru hesapla
+            confidence = calculate_confidence(answer, similarity_scores)
+
             st.subheader("💡 Cevap")
             st.success(answer)
-            log_question(user_question, answer)
+            st.info(f"🔹 Güven Skoru: %{confidence}")
+
+            # Log kaydı
+            log_question(user_question, answer, confidence)
 
     # Sidebar: Rapor ve Sıfırlama
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
