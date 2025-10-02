@@ -66,21 +66,40 @@ def main():
     uploaded_file = st.file_uploader("📂 Doküman yükleyin", type=["pdf","docx"])
     if uploaded_file is not None:
         ext = uploaded_file.name.split(".")[-1].lower()
+        texts, references = [], []
+
         if ext == "pdf":
             pdf_reader = PdfReader(uploaded_file)
-            text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
+            for i, page in enumerate(pdf_reader.pages):
+                page_text = page.extract_text() or ""
+                texts.append(page_text)
+                references.append([f"Sayfa {i+1}"] * len(page_text.split("\n")))
         elif ext == "docx":
             doc = Document(uploaded_file)
-            text = "\n".join([para.text for para in doc.paragraphs])
+            for i, para in enumerate(doc.paragraphs):
+                texts.append(para.text)
+                references.append([f"Paragraf {i+1}"] * len(para.text.split("\n")))
         else:
             st.error("Sadece PDF veya Word yükleyebilirsiniz.")
             st.stop()
 
-        st.info(f"📄 Doküman {len(text.splitlines())} satır içeriyor.")
+        full_text = "\n".join(texts)
+        full_refs = sum(references, [])
+
+        st.info(f"📄 Doküman {len(full_text.splitlines())} satır içeriyor.")
 
         # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
-        chunks = text_splitter.split_text(text)
+        chunks = text_splitter.split_text(full_text)
+
+        # Chunk referanslarını eşle
+        chunk_refs = []
+        char_index = 0
+        for chunk in chunks:
+            line_count = len(chunk.splitlines())
+            refs = full_refs[char_index:char_index+line_count]
+            chunk_refs.append(", ".join(sorted(set(refs))))
+            char_index += line_count
 
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
@@ -92,29 +111,30 @@ def main():
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            # Semantic + similarity search
             docs = vectorstore.similarity_search(user_question, k=6)
 
-            # Orijinal uzun cevap
+            # Orijinal cevap
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             chain = load_qa_chain(llm, chain_type="stuff")
             answer = chain.run(input_documents=docs, question=user_question)
 
-            # Özetleme prompt
+            # Özetleme
             summary_prompt = f"""
-            Verilen cevabı kısa ve öz bir şekilde özetle.
+            Verilen cevabı kısa ve öz şekilde özetle.
             Kullanıcıya yanıt: {answer}
             """
             summary = llm.predict(summary_prompt)
 
-            # Kaynak referansları
-            references = [f"Chunk {i+1}" for i in range(len(docs))]
+            # Kaynak referanslarını göster
+            doc_indices = [chunks.index(doc.page_content) for doc in docs]
+            source_refs = [chunk_refs[i] for i in doc_indices]
 
             st.subheader("💡 Cevap (Özetli)")
             st.success(summary)
 
             st.subheader("📚 Kaynaklar")
-            st.write(references)
+            for ref in source_refs:
+                st.write(ref)
 
             log_question(user_question, answer)
 
