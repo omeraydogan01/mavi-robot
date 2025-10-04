@@ -70,6 +70,7 @@ def main():
     )
 
     all_texts = []
+    excel_tables = []
 
     if uploaded_files:
         for uploaded_file in uploaded_files:
@@ -80,19 +81,22 @@ def main():
                 pdf_reader = PdfReader(uploaded_file)
                 for page in pdf_reader.pages:
                     file_text += page.extract_text() or ""
+                all_texts.append(file_text)
 
             elif ext == "docx":
                 doc = Document(uploaded_file)
                 file_text = "\n".join([p.text for p in doc.paragraphs])
+                all_texts.append(file_text)
 
             elif ext in ["xlsx", "csv"]:
                 if ext == "xlsx":
                     df = pd.read_excel(uploaded_file)
                 else:
                     df = pd.read_csv(uploaded_file)
-                file_text = df.to_string(index=False)  # Excel/CSV’yi string haline getir
-
-            all_texts.append(file_text)
+                excel_tables.append(df)  # DataFrame olarak kaydet
+                # DataFrame’i metin olarak da kaydediyoruz
+                file_text = df.to_string(index=False)
+                all_texts.append(file_text)
 
         full_text = "\n".join(all_texts)
         st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
@@ -111,14 +115,27 @@ def main():
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            docs = vectorstore.similarity_search(user_question, k=6)
+            # Öncelikle LLM ile tabloları sorgula
+            table_answers = []
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
+            for df in excel_tables:
+                prompt = f"Sana bir Excel tablosu verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
+                table_answer = llm.call_as_llm(prompt)
+                table_answers.append(table_answer)
+
+            # Metin tabanlı belgeleri de QA zinciri ile sorgula
+            docs = vectorstore.similarity_search(user_question, k=6)
             chain = load_qa_chain(llm, chain_type="stuff")
-            answer = chain.run(input_documents=docs, question=user_question)
+            text_answer = chain.run(input_documents=docs, question=user_question)
+
+            # Sonuçları birleştir
+            final_answer = text_answer
+            if table_answers:
+                final_answer += "\n\n📊 Excel/CSV tablosundan alınan cevaplar:\n" + "\n".join(table_answers)
 
             st.subheader("💡 Cevap")
-            st.success(answer)
-            log_question(user_question, answer)
+            st.success(final_answer)
+            log_question(user_question, final_answer)
 
     # Sidebar: Rapor ve Sıfırlama
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
