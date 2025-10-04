@@ -120,7 +120,7 @@ def main():
     with tab2:
         uploaded_image = st.file_uploader("🖼️ Bir görsel yükleyin (JPG/PNG)", type=["jpg", "jpeg", "png"])
         if uploaded_image:
-            st.image(uploaded_image, caption="Yüklenen Görsel", use_column_width=True)
+            st.image(uploaded_image, caption="Yüklenen Görsel", use_container_width=True)
             question = st.text_input("Görselle ilgili sorunuzu yazın 👇")
 
             if question:
