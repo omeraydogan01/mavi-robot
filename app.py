@@ -65,7 +65,7 @@ def main():
     # Çoklu dosya yükleme
     uploaded_files = st.file_uploader(
         "📂 Bir veya birden fazla doküman yükleyin",
-        type=["pdf", "docx"],
+        type=["pdf", "docx", "xlsx", "csv"],
         accept_multiple_files=True
     )
 
@@ -79,11 +79,18 @@ def main():
             if ext == "pdf":
                 pdf_reader = PdfReader(uploaded_file)
                 for page in pdf_reader.pages:
-                    content = page.extract_text() or ""
-                    file_text += content
+                    file_text += page.extract_text() or ""
+
             elif ext == "docx":
                 doc = Document(uploaded_file)
                 file_text = "\n".join([p.text for p in doc.paragraphs])
+
+            elif ext in ["xlsx", "csv"]:
+                if ext == "xlsx":
+                    df = pd.read_excel(uploaded_file)
+                else:
+                    df = pd.read_csv(uploaded_file)
+                file_text = df.to_string(index=False)  # Excel/CSV’yi string haline getir
 
             all_texts.append(file_text)
 
@@ -142,4 +149,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
