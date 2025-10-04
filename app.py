@@ -101,19 +101,30 @@ def main():
             return FAISS.from_texts(chunks, embeddings)
         vectorstore = create_vectorstore(chunks, embeddings)
 
-        # Kullanıcı sorusu
-        user_question = st.text_input("Sorunuzu yazın 👇")
-        if user_question:
-            docs = vectorstore.similarity_search(user_question, k=6)
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
-            chain = load_qa_chain(llm, chain_type="stuff")
-            answer = chain.run(input_documents=docs, question=user_question)
+        # Soru input state
+        if "user_question" not in st.session_state:
+            st.session_state.user_question = ""
 
-            st.subheader("💡 Cevap")
-            st.success(answer)
-            log_question(user_question, answer)
+        # Soru giriş alanı
+        user_question = st.text_input("Sorunuzu yazın 👇", key="user_question")
 
-    # Sidebar: Rapor ve Sıfırlama
+        # Soru gönderme butonu
+        if st.button("🚀 Gönder"):
+            if user_question.strip():
+                docs = vectorstore.similarity_search(user_question, k=6)
+                llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
+                chain = load_qa_chain(llm, chain_type="stuff")
+                answer = chain.run(input_documents=docs, question=user_question)
+
+                st.subheader("💡 Cevap")
+                st.success(answer)
+                log_question(user_question, answer)
+
+                # Cevaptan sonra input'u temizle
+                st.session_state.user_question = ""
+                st.experimental_rerun()
+
+    # Sidebar: Rapor & Yönetim
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
