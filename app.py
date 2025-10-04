@@ -12,11 +12,11 @@ from io import BytesIO
 
 LOG_FILE = "logs.xlsx"
 
-# Secrets şifreleri
+# 🔐 Şifreler
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
-# Log kaydetme
+# 🔸 Soru & Cevap log kaydı
 def log_question(question, answer):
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -30,7 +30,7 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_excel(LOG_FILE, index=False)
 
-# Rapor indirilebilir Excel dosyası
+# 🔸 Rapor indir
 def get_report():
     if os.path.exists(LOG_FILE):
         df = pd.read_excel(LOG_FILE)
@@ -40,7 +40,7 @@ def get_report():
         return output
     return None
 
-# Sıfırlama
+# 🔸 Sıfırla
 def reset_logs():
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
@@ -49,14 +49,18 @@ def reset_logs():
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
 
-    # Header ve logo
+    # Başlık ve logo
     col1, col2 = st.columns([1,6])
     with col1:
         st.image("logo.png", width=120)
     with col2:
         st.header("Dokümana Soru Sor")
 
-    # API key
+    # Session state
+    if "user_question" not in st.session_state:
+        st.session_state.user_question = ""
+
+    # API Key
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
@@ -99,30 +103,25 @@ def main():
         @st.cache_resource
         def create_vectorstore(chunks, embeddings):
             return FAISS.from_texts(chunks, embeddings)
+
         vectorstore = create_vectorstore(chunks, embeddings)
 
-        # Soru input state
-        if "user_question" not in st.session_state:
+        # Kullanıcı sorusu
+        user_question = st.text_input("Sorunuzu yazın 👇", value=st.session_state.user_question)
+
+        if user_question:
+            docs = vectorstore.similarity_search(user_question, k=6)
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
+            chain = load_qa_chain(llm, chain_type="stuff")
+            answer = chain.run(input_documents=docs, question=user_question)
+
+            st.subheader("💡 Cevap")
+            st.success(answer)
+            log_question(user_question, answer)
+
+            # 🧹 Soru alanını sıfırla
             st.session_state.user_question = ""
-
-        # Soru giriş alanı
-        user_question = st.text_input("Sorunuzu yazın 👇", key="user_question")
-
-        # Soru gönderme butonu
-        if st.button("🚀 Gönder"):
-            if user_question.strip():
-                docs = vectorstore.similarity_search(user_question, k=6)
-                llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
-                chain = load_qa_chain(llm, chain_type="stuff")
-                answer = chain.run(input_documents=docs, question=user_question)
-
-                st.subheader("💡 Cevap")
-                st.success(answer)
-                log_question(user_question, answer)
-
-                # Cevaptan sonra input'u temizle
-                st.session_state.user_question = ""
-                st.experimental_rerun()
+            st.rerun()
 
     # Sidebar: Rapor & Yönetim
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
