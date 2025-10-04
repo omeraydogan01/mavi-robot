@@ -12,11 +12,11 @@ from io import BytesIO
 
 LOG_FILE = "logs.xlsx"
 
-# 🔐 Şifreler
+# Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
 
-# 🔸 Soru & Cevap log kaydı
+# Log kaydetme
 def log_question(question, answer):
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -30,7 +30,7 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_excel(LOG_FILE, index=False)
 
-# 🔸 Rapor indir
+# Rapor indirilebilir Excel dosyası
 def get_report():
     if os.path.exists(LOG_FILE):
         df = pd.read_excel(LOG_FILE)
@@ -40,7 +40,7 @@ def get_report():
         return output
     return None
 
-# 🔸 Sıfırla
+# Sıfırlama
 def reset_logs():
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
@@ -49,18 +49,14 @@ def reset_logs():
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
 
-    # Başlık ve logo
+    # Header ve logo
     col1, col2 = st.columns([1,6])
     with col1:
         st.image("logo.png", width=120)
     with col2:
         st.header("Dokümana Soru Sor")
 
-    # Session state
-    if "user_question" not in st.session_state:
-        st.session_state.user_question = ""
-
-    # API Key
+    # API key
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
@@ -103,12 +99,10 @@ def main():
         @st.cache_resource
         def create_vectorstore(chunks, embeddings):
             return FAISS.from_texts(chunks, embeddings)
-
         vectorstore = create_vectorstore(chunks, embeddings)
 
         # Kullanıcı sorusu
-        user_question = st.text_input("Sorunuzu yazın 👇", value=st.session_state.user_question)
-
+        user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
             docs = vectorstore.similarity_search(user_question, k=6)
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
@@ -119,11 +113,7 @@ def main():
             st.success(answer)
             log_question(user_question, answer)
 
-            # 🧹 Soru alanını sıfırla
-            st.session_state.user_question = ""
-            st.rerun()
-
-    # Sidebar: Rapor & Yönetim
+    # Sidebar: Rapor ve Sıfırlama
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
@@ -152,3 +142,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
