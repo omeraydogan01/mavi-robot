@@ -16,10 +16,7 @@ LOG_FILE = "logs.xlsx"
 
 # Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
-
-openai.api_key = OPENAI_API_KEY
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  
 
 # Log kaydetme
 def log_question(question, answer):
@@ -51,24 +48,31 @@ def reset_logs():
         os.remove(LOG_FILE)
         st.success("✅ Soru-cevap geçmişi sıfırlandı!")
 
+# Streamlit session_state ile input temizleme
+if "user_question" not in st.session_state:
+    st.session_state.user_question = ""
+
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
-
+    
     # Header ve logo
     col1, col2 = st.columns([1,6])
     with col1:
         st.image("logo.png", width=120)
     with col2:
-        st.header("Doküman ve Görsel Soru Robotu")
+        st.header("Dokümana & Görsele Soru Sor")
 
-    if not OPENAI_API_KEY:
+    # API key
+    api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
+    openai.api_key = api_key
+    if not api_key:
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
-    # Çoklu dosya yükleme
+    # Dosya yükleme
     uploaded_files = st.file_uploader(
-        "📂 Bir veya birden fazla doküman yükleyin (PDF/Word)",
-        type=["pdf","docx"],
+        "📂 Bir veya birden fazla doküman yükleyin",
+        type=["pdf", "docx"],
         accept_multiple_files=True
     )
 
@@ -78,7 +82,6 @@ def main():
         for uploaded_file in uploaded_files:
             ext = uploaded_file.name.split(".")[-1].lower()
             file_text = ""
-
             if ext == "pdf":
                 pdf_reader = PdfReader(uploaded_file)
                 for page in pdf_reader.pages:
@@ -87,17 +90,16 @@ def main():
             elif ext == "docx":
                 doc = Document(uploaded_file)
                 file_text = "\n".join([p.text for p in doc.paragraphs])
-
             all_texts.append(file_text)
 
-        full_text = "\n".join(all_texts)
+    full_text = "\n".join(all_texts) if all_texts else ""
+    if full_text:
         st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
         # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(full_text)
-
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=OPENAI_API_KEY)
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
         @st.cache_resource
         def create_vectorstore(chunks, embeddings):
@@ -105,37 +107,48 @@ def main():
         vectorstore = create_vectorstore(chunks, embeddings)
 
     # Görsel yükleme
-    uploaded_image = st.file_uploader("🖼️ Görsel yükleyin (PNG, JPG, JPEG)", type=["png","jpg","jpeg"])
-    if uploaded_image:
-        st.image(Image.open(uploaded_image), use_container_width=True)
+    uploaded_image = st.file_uploader("🖼️ Görsel yükleyin (opsiyonel)", type=["png", "jpg", "jpeg"])
 
     # Kullanıcı sorusu
-    user_question = st.text_input("Sorunuzu yazın 👇")
-    if user_question:
-        answer = ""
-        # Metin tabanlı dokümanlardan yanıt
-        if uploaded_files:
+    user_question = st.text_input("Sorunuzu yazın 👇", value=st.session_state.user_question)
+
+    if st.button("Sor"):
+        st.session_state.user_question = ""  # input temizle
+
+        combined_answer = ""
+
+        # Doküman tabanlı cevap
+        if full_text:
             docs = vectorstore.similarity_search(user_question, k=6)
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=OPENAI_API_KEY)
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             chain = load_qa_chain(llm, chain_type="stuff")
-            answer += chain.run(input_documents=docs, question=user_question)
+            answer_docs = chain.run(input_documents=docs, question=user_question)
+            combined_answer += f"📄 Dokümandan Cevap:\n{answer_docs}\n\n"
 
-        # Görsel tabanlı yanıt (GPT-4V)
+        # Görsel tabanlı cevap
         if uploaded_image:
-            uploaded_image.seek(0)
-            response = openai.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=[{"role":"user", "content": f"Bu görselle ilgili soruyu cevapla: {user_question}"}],
-                files=[uploaded_image]
-            )
-            visual_answer = response.choices[0].message["content"]
-            answer += f"\n\n🖼️ Görsel Analizi Cevabı:\n{visual_answer}"
+            img = Image.open(uploaded_image).convert("RGB")
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
 
-        st.subheader("💡 Cevap")
-        st.success(answer)
-        log_question(user_question, answer)
-        # Soruyu inputtan temizle
-        st.experimental_rerun()
+            try:
+                response = openai.chat.completions.create(
+                    model="gpt-4.1-mini",
+                    messages=[{"role":"user", "content": f"Bu görselle ilgili soruyu cevapla: {user_question}"}],
+                    files=[("image.png", buf)]
+                )
+                answer_img = response.choices[0].message["content"]
+                combined_answer += f"🖼️ Görselden Cevap:\n{answer_img}\n\n"
+            except Exception as e:
+                combined_answer += f"🖼️ Görsel analizi sırasında hata oluştu: {str(e)}\n\n"
+
+        if combined_answer:
+            st.subheader("💡 Cevap")
+            st.success(combined_answer)
+            log_question(user_question, combined_answer)
+        else:
+            st.info("Lütfen bir soru girin veya doküman/görsel yükleyin.")
 
     # Sidebar: Rapor ve Sıfırlama
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
