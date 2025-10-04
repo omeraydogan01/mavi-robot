@@ -12,9 +12,9 @@ from io import BytesIO
 
 LOG_FILE = "logs.xlsx"
 
-# Secrets şifreleri
+# Şifreler
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
 # Log kaydetme
 def log_question(question, answer):
@@ -30,7 +30,7 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_excel(LOG_FILE, index=False)
 
-# Rapor indirilebilir Excel dosyası
+# Rapor indirilebilir Excel
 def get_report():
     if os.path.exists(LOG_FILE):
         df = pd.read_excel(LOG_FILE)
@@ -62,26 +62,42 @@ def main():
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
-    # Dosya yükleme
-    uploaded_file = st.file_uploader("📂 Doküman yükleyin", type=["pdf","docx"])
-    if uploaded_file is not None:
-        ext = uploaded_file.name.split(".")[-1].lower()
-        if ext == "pdf":
-            pdf_reader = PdfReader(uploaded_file)
-            text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
-        elif ext == "docx":
-            doc = Document(uploaded_file)
-            text = "\n".join([para.text for para in doc.paragraphs])
-        else:
-            st.error("Sadece PDF veya Word yükleyebilirsiniz.")
-            st.stop()
+    # Çoklu dosya yükleme
+    uploaded_files = st.file_uploader(
+        "📂 Bir veya birden fazla doküman yükleyin",
+        type=["pdf", "docx"],
+        accept_multiple_files=True
+    )
 
-        st.info(f"📄 Doküman {len(text.splitlines())} satır içeriyor.")
+    all_texts = []
+    metadata = []
+
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            ext = uploaded_file.name.split(".")[-1].lower()
+            file_text = ""
+
+            if ext == "pdf":
+                pdf_reader = PdfReader(uploaded_file)
+                for i, page in enumerate(pdf_reader.pages):
+                    content = page.extract_text() or ""
+                    file_text += content
+                    metadata.append({"source": uploaded_file.name, "page": i + 1, "text": content})
+            elif ext == "docx":
+                doc = Document(uploaded_file)
+                content = "\n".join([p.text for p in doc.paragraphs])
+                file_text += content
+                metadata.append({"source": uploaded_file.name, "page": None, "text": content})
+            all_texts.append(file_text)
+
+        full_text = "\n".join(all_texts)
+        st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
         # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
-        chunks = text_splitter.split_text(text)
+        chunks = text_splitter.split_text(full_text)
 
+        # Embedding oluşturma
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
         @st.cache_resource
@@ -89,18 +105,27 @@ def main():
             return FAISS.from_texts(chunks, embeddings)
         vectorstore = create_vectorstore(chunks, embeddings)
 
-        # Kullanıcı sorusu
+        # Soru alma
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
+            # En alakalı 6 sonucu getir
             docs = vectorstore.similarity_search(user_question, k=6)
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             chain = load_qa_chain(llm, chain_type="stuff")
             answer = chain.run(input_documents=docs, question=user_question)
+
             st.subheader("💡 Cevap")
             st.success(answer)
+
+            # Kaynak gösterimi
+            st.markdown("### 🔎 Kaynaklar")
+            for doc in docs:
+                ref_text = doc.page_content[:200].replace("\n", " ")
+                st.markdown(f"- **{doc.metadata.get('source', 'Bilinmiyor')}** → {ref_text}...")
+
             log_question(user_question, answer)
 
-    # Sidebar: Rapor ve Sıfırlama
+    # Sidebar: Rapor & Yönetim
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
