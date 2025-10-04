@@ -12,9 +12,9 @@ from io import BytesIO
 
 LOG_FILE = "logs.xlsx"
 
-# Şifreler
+# Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
 
 # Log kaydetme
 def log_question(question, answer):
@@ -30,7 +30,7 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_excel(LOG_FILE, index=False)
 
-# Rapor indirilebilir Excel
+# Rapor indirilebilir Excel dosyası
 def get_report():
     if os.path.exists(LOG_FILE):
         df = pd.read_excel(LOG_FILE)
@@ -70,7 +70,6 @@ def main():
     )
 
     all_texts = []
-    metadata = []
 
     if uploaded_files:
         for uploaded_file in uploaded_files:
@@ -79,15 +78,13 @@ def main():
 
             if ext == "pdf":
                 pdf_reader = PdfReader(uploaded_file)
-                for i, page in enumerate(pdf_reader.pages):
+                for page in pdf_reader.pages:
                     content = page.extract_text() or ""
                     file_text += content
-                    metadata.append({"source": uploaded_file.name, "page": i + 1, "text": content})
             elif ext == "docx":
                 doc = Document(uploaded_file)
-                content = "\n".join([p.text for p in doc.paragraphs])
-                file_text += content
-                metadata.append({"source": uploaded_file.name, "page": None, "text": content})
+                file_text = "\n".join([p.text for p in doc.paragraphs])
+
             all_texts.append(file_text)
 
         full_text = "\n".join(all_texts)
@@ -97,7 +94,6 @@ def main():
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(full_text)
 
-        # Embedding oluşturma
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
         @st.cache_resource
@@ -105,10 +101,9 @@ def main():
             return FAISS.from_texts(chunks, embeddings)
         vectorstore = create_vectorstore(chunks, embeddings)
 
-        # Soru alma
+        # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            # En alakalı 6 sonucu getir
             docs = vectorstore.similarity_search(user_question, k=6)
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             chain = load_qa_chain(llm, chain_type="stuff")
@@ -116,16 +111,9 @@ def main():
 
             st.subheader("💡 Cevap")
             st.success(answer)
-
-            # Kaynak gösterimi
-            st.markdown("### 🔎 Kaynaklar")
-            for doc in docs:
-                ref_text = doc.page_content[:200].replace("\n", " ")
-                st.markdown(f"- **{doc.metadata.get('source', 'Bilinmiyor')}** → {ref_text}...")
-
             log_question(user_question, answer)
 
-    # Sidebar: Rapor & Yönetim
+    # Sidebar: Rapor ve Sıfırlama
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
