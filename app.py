@@ -9,12 +9,13 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 from datetime import datetime
 from io import BytesIO
+from openai import OpenAI  # 🆕 Görsel analiz için OpenAI import edildi
 
 LOG_FILE = "logs.xlsx"
 
 # Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
 # Log kaydetme
 def log_question(question, answer):
@@ -54,7 +55,7 @@ def main():
     with col1:
         st.image("logo.png", width=120)
     with col2:
-        st.header("Dokümana Soru Sor")
+        st.header("Dokümana veya Görsele Soru Sor")
 
     # API key
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
@@ -62,58 +63,95 @@ def main():
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
-    # Çoklu dosya yükleme
-    uploaded_files = st.file_uploader(
-        "📂 Bir veya birden fazla doküman yükleyin",
-        type=["pdf", "docx"],
-        accept_multiple_files=True
-    )
+    # 🔹 Sekmeli yapı: Doküman Analizi | Görsel Analizi
+    tab1, tab2 = st.tabs(["📄 Doküman Analizi", "🖼️ Görsel Analizi"])
 
-    all_texts = []
+    with tab1:
+        uploaded_files = st.file_uploader(
+            "📂 Bir veya birden fazla doküman yükleyin",
+            type=["pdf", "docx"],
+            accept_multiple_files=True
+        )
 
-    if uploaded_files:
-        for uploaded_file in uploaded_files:
-            ext = uploaded_file.name.split(".")[-1].lower()
-            file_text = ""
+        all_texts = []
 
-            if ext == "pdf":
-                pdf_reader = PdfReader(uploaded_file)
-                for page in pdf_reader.pages:
-                    content = page.extract_text() or ""
-                    file_text += content
-            elif ext == "docx":
-                doc = Document(uploaded_file)
-                file_text = "\n".join([p.text for p in doc.paragraphs])
+        if uploaded_files:
+            for uploaded_file in uploaded_files:
+                ext = uploaded_file.name.split(".")[-1].lower()
+                file_text = ""
 
-            all_texts.append(file_text)
+                if ext == "pdf":
+                    pdf_reader = PdfReader(uploaded_file)
+                    for page in pdf_reader.pages:
+                        content = page.extract_text() or ""
+                        file_text += content
+                elif ext == "docx":
+                    doc = Document(uploaded_file)
+                    file_text = "\n".join([p.text for p in doc.paragraphs])
 
-        full_text = "\n".join(all_texts)
-        st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
+                all_texts.append(file_text)
 
-        # Metin parçalama
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
-        chunks = text_splitter.split_text(full_text)
+            full_text = "\n".join(all_texts)
+            st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
+            chunks = text_splitter.split_text(full_text)
 
-        @st.cache_resource
-        def create_vectorstore(chunks, embeddings):
-            return FAISS.from_texts(chunks, embeddings)
-        vectorstore = create_vectorstore(chunks, embeddings)
+            embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
-        # Kullanıcı sorusu
-        user_question = st.text_input("Sorunuzu yazın 👇")
-        if user_question:
-            docs = vectorstore.similarity_search(user_question, k=6)
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
-            chain = load_qa_chain(llm, chain_type="stuff")
-            answer = chain.run(input_documents=docs, question=user_question)
+            @st.cache_resource
+            def create_vectorstore(chunks, embeddings):
+                return FAISS.from_texts(chunks, embeddings)
 
-            st.subheader("💡 Cevap")
-            st.success(answer)
-            log_question(user_question, answer)
+            vectorstore = create_vectorstore(chunks, embeddings)
 
-    # Sidebar: Rapor ve Sıfırlama
+            user_question = st.text_input("Sorunuzu yazın 👇")
+            if user_question:
+                docs = vectorstore.similarity_search(user_question, k=6)
+                llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
+                chain = load_qa_chain(llm, chain_type="stuff")
+                answer = chain.run(input_documents=docs, question=user_question)
+
+                st.subheader("💡 Cevap")
+                st.success(answer)
+                log_question(user_question, answer)
+
+    # 🆕 GÖRSEL ANALİZİ SEKME
+    with tab2:
+        uploaded_image = st.file_uploader("🖼️ Bir görsel yükleyin (JPG/PNG)", type=["jpg", "jpeg", "png"])
+        if uploaded_image:
+            st.image(uploaded_image, caption="Yüklenen Görsel", use_column_width=True)
+            question = st.text_input("Görselle ilgili sorunuzu yazın 👇")
+
+            if question:
+                client = OpenAI(api_key=api_key)
+
+                # Görseli geçici olarak kaydet
+                image_path = f"temp_{uploaded_image.name}"
+                with open(image_path, "wb") as f:
+                    f.write(uploaded_image.getbuffer())
+
+                with open(image_path, "rb") as img:
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "Kullanıcının yüklediği görseli analiz et ve soruya göre açıklayıcı yanıt ver."},
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": question},
+                                    {"type": "image_url", "image_url": f"data:image/jpeg;base64,{uploaded_image.getvalue().decode('latin1')}"}
+                                ]
+                            }
+                        ]
+                    )
+
+                answer = response.choices[0].message.content
+                st.subheader("💡 Görsel Analizi Sonucu")
+                st.success(answer)
+                log_question(question, answer)
+
+    # Sidebar
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
@@ -142,4 +180,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
