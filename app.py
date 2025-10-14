@@ -15,6 +15,7 @@ LOG_FILE = "logs.xlsx"
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
 RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
+# Log kaydetme
 def log_question(question, answer):
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -28,6 +29,7 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_excel(LOG_FILE, index=False)
 
+# Rapor alma
 def get_report():
     if os.path.exists(LOG_FILE):
         df = pd.read_excel(LOG_FILE)
@@ -37,6 +39,7 @@ def get_report():
         return output
     return None
 
+# Sıfırlama
 def reset_logs():
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
@@ -114,17 +117,23 @@ def main():
                 model="gpt-4o-mini",
                 temperature=0,
                 api_key=api_key,
-                system_message="Sen bir doküman analisti asistanısın. Cevaplarını sadece verilen dokümanlardan çıkar, tahmin yürütme. Eğer bilgi yoksa 'Bu bilgi dokümanda yer almıyor.' de."
+                system_message=(
+                    "Sen bir doküman analisti asistanısın. "
+                    "Cevaplarını sadece verilen dokümanlardan çıkar, tahmin yürütme. "
+                    "Eğer bilgi yoksa 'Bu bilgi dokümanda yer almıyor.' de."
+                )
             )
 
-            # Excel tabloları için filtreleme
+            # Excel/CSV tablolarından yanıtlar
             table_answers = []
             for df in excel_tables:
                 filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(user_question, case=False).any(), axis=1)]
                 if filtered_df.empty:
                     filtered_df = df.head(10)
                 prompt = f"Sana bir Excel tablosu verdim:\n{filtered_df.to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
-                table_answers.append(llm.call_as_llm(prompt))
+                # Yeni çağrı şekli
+                table_answer = llm(prompt).content if hasattr(llm(prompt), "content") else str(llm(prompt))
+                table_answers.append(table_answer)
 
             # Metin tabanlı belgeler için RetrievalQA
             retriever = vectorstore.as_retriever(search_kwargs={"k":6})
@@ -136,13 +145,13 @@ def main():
             )
             text_answer = qa_chain.run(user_question)
 
-            # Self-verification (opsiyonel)
+            # Self-verification
             verify_prompt = f"""
-            Cevap: {text_answer}
-            Soru: {user_question}
-            Lütfen cevabın dokümanla uyumlu olup olmadığını kontrol et. Eğer değilse 'Bu bilgi dokümanda yer almıyor.' de.
-            """
-            final_text_answer = llm.call_as_llm(verify_prompt)
+Cevap: {text_answer}
+Soru: {user_question}
+Lütfen cevabın dokümanla uyumlu olup olmadığını kontrol et. Eğer değilse 'Bu bilgi dokümanda yer almıyor.' de.
+"""
+            final_text_answer = llm(verify_prompt).content if hasattr(llm(verify_prompt), "content") else str(llm(verify_prompt))
 
             final_answer = final_text_answer
             if table_answers:
