@@ -1,3 +1,4 @@
+
 import os
 import streamlit as st
 import pandas as pd
@@ -7,7 +8,6 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
-from langchain.schema import HumanMessage
 from datetime import datetime
 from io import BytesIO
 
@@ -15,7 +15,7 @@ LOG_FILE = "logs.xlsx"
 
 # Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
 
 # Log kaydetme
 def log_question(question, answer):
@@ -57,11 +57,13 @@ def main():
     with col2:
         st.header("Dokümana Soru Sor")
 
+    # API key
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
-        st.error("⚠️ API key bulunamadı.")
+        st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
+    # Çoklu dosya yükleme
     uploaded_files = st.file_uploader(
         "📂 Bir veya birden fazla doküman yükleyin",
         type=["pdf", "docx", "xlsx", "csv"],
@@ -92,7 +94,8 @@ def main():
                     df = pd.read_excel(uploaded_file)
                 else:
                     df = pd.read_csv(uploaded_file)
-                excel_tables.append(df)
+                excel_tables.append(df)  # DataFrame olarak kaydet
+                # DataFrame’i metin olarak da kaydediyoruz
                 file_text = df.to_string(index=False)
                 all_texts.append(file_text)
 
@@ -110,40 +113,24 @@ def main():
             return FAISS.from_texts(chunks, embeddings)
         vectorstore = create_vectorstore(chunks, embeddings)
 
+        # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            # LLM oluştur
-            llm = ChatOpenAI(
-                model="gpt-4o-mini",
-                temperature=0,
-                api_key=api_key,
-            )
-
-            # Excel/CSV sorguları
+            # Öncelikle LLM ile tabloları sorgula
             table_answers = []
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             for df in excel_tables:
-                filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(user_question, case=False).any(), axis=1)]
-                if filtered_df.empty:
-                    filtered_df = df.head(10)
-                prompt = f"Sana bir Excel/CSV tablosu verdim:\n{filtered_df.to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
-                response = llm([HumanMessage(content=prompt)]).content
-                table_answers.append(response)
+                prompt = f"Sana bir Excel tablosu verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
+                table_answer = llm.call_as_llm(prompt)
+                table_answers.append(table_answer)
 
-            # Metin tabanlı belgeler için QA zinciri
+            # Metin tabanlı belgeleri de QA zinciri ile sorgula
             docs = vectorstore.similarity_search(user_question, k=6)
             chain = load_qa_chain(llm, chain_type="stuff")
             text_answer = chain.run(input_documents=docs, question=user_question)
 
-            # Self-verification
-            verify_prompt = f"""
-Cevap: {text_answer}
-Soru: {user_question}
-Bu cevabın dokümanla uyumlu olup olmadığını kontrol et. Eğer değilse 'Bu bilgi dokümanda yer almıyor.' de.
-"""
-            final_text_answer = llm([HumanMessage(content=verify_prompt)]).content
-
             # Sonuçları birleştir
-            final_answer = final_text_answer
+            final_answer = text_answer
             if table_answers:
                 final_answer += "\n\n📊 Excel/CSV tablosundan alınan cevaplar:\n" + "\n".join(table_answers)
 
@@ -151,7 +138,7 @@ Bu cevabın dokümanla uyumlu olup olmadığını kontrol et. Eğer değilse 'Bu
             st.success(final_answer)
             log_question(user_question, final_answer)
 
-    # Sidebar
+    # Sidebar: Rapor ve Sıfırlama
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
