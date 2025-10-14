@@ -12,11 +12,9 @@ from io import BytesIO
 
 LOG_FILE = "logs.xlsx"
 
-# Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
 RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
-# Log kaydetme
 def log_question(question, answer):
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -30,7 +28,6 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_excel(LOG_FILE, index=False)
 
-# Rapor indirilebilir Excel dosyası
 def get_report():
     if os.path.exists(LOG_FILE):
         df = pd.read_excel(LOG_FILE)
@@ -40,7 +37,6 @@ def get_report():
         return output
     return None
 
-# Sıfırlama
 def reset_logs():
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
@@ -90,23 +86,18 @@ def main():
                     df = pd.read_excel(uploaded_file)
                 else:
                     df = pd.read_csv(uploaded_file)
-                excel_tables.append(df)  # DataFrame olarak kaydet
+                excel_tables.append(df)
                 file_text = df.to_string(index=False)
                 all_texts.append(file_text)
 
         full_text = "\n".join(all_texts)
         st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
-        # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(full_text)
-
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
-
-        # Vectorstore oluşturma (cache kaldırıldı)
         vectorstore = FAISS.from_texts(chunks, embeddings)
 
-        # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
             llm = ChatOpenAI(
@@ -119,7 +110,7 @@ def main():
                 )
             )
 
-            # Excel/CSV tablosu için sorgulama
+            # Excel/CSV tablosu için
             table_answers = []
             for df in excel_tables:
                 filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(user_question, case=False).any(), axis=1)]
@@ -127,15 +118,21 @@ def main():
                     filtered_df = df.head(10)
                 prompt = f"Sana bir Excel tablosu verdim:\n{filtered_df.to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
                 table_answer = llm(prompt)
-                table_answers.append(table_answer)
+                # Self-verification
+                verify_prompt = f"Cevap: {table_answer}\nSoru: {user_question}\nBu cevabın tabloyla uyumlu olup olmadığını kontrol et. Eğer değilse 'Bu bilgi dokümanda yer almıyor.' de."
+                verified_answer = llm(verify_prompt)
+                table_answers.append(verified_answer)
 
-            # Metin tabanlı belgeler için QA zinciri
+            # Metin tabanlı belgeler
             docs = vectorstore.similarity_search(user_question, k=6)
             chain = load_qa_chain(llm, chain_type="stuff")
             text_answer = chain.run(input_documents=docs, question=user_question)
+            # Self-verification
+            verify_prompt = f"Cevap: {text_answer}\nSoru: {user_question}\nBu cevabın belgelerle uyumlu olup olmadığını kontrol et. Eğer değilse 'Bu bilgi dokümanda yer almıyor.' de."
+            final_text_answer = llm(verify_prompt)
 
-            # Cevapları birleştir
-            final_answer = text_answer
+            # Sonuçları birleştir
+            final_answer = final_text_answer
             if table_answers:
                 final_answer += "\n\n📊 Excel/CSV tablosundan alınan cevaplar:\n" + "\n".join(table_answers)
 
