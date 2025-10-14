@@ -1,4 +1,3 @@
-
 import os
 import streamlit as st
 import pandas as pd
@@ -7,17 +6,15 @@ from docx import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain.chains.question_answering import load_qa_chain
+from langchain.chains import RetrievalQA
 from datetime import datetime
 from io import BytesIO
 
 LOG_FILE = "logs.xlsx"
 
-# Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
-# Log kaydetme
 def log_question(question, answer):
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -31,7 +28,6 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_excel(LOG_FILE, index=False)
 
-# Rapor indirilebilir Excel dosyası
 def get_report():
     if os.path.exists(LOG_FILE):
         df = pd.read_excel(LOG_FILE)
@@ -41,7 +37,6 @@ def get_report():
         return output
     return None
 
-# Sıfırlama
 def reset_logs():
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
@@ -50,20 +45,17 @@ def reset_logs():
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
 
-    # Header ve logo
     col1, col2 = st.columns([1,6])
     with col1:
         st.image("logo.png", width=120)
     with col2:
         st.header("Dokümana Soru Sor")
 
-    # API key
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
-        st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
+        st.error("⚠️ API key bulunamadı.")
         st.stop()
 
-    # Çoklu dosya yükleme
     uploaded_files = st.file_uploader(
         "📂 Bir veya birden fazla doküman yükleyin",
         type=["pdf", "docx", "xlsx", "csv"],
@@ -95,15 +87,18 @@ def main():
                 else:
                     df = pd.read_csv(uploaded_file)
                 excel_tables.append(df)  # DataFrame olarak kaydet
-                # DataFrame’i metin olarak da kaydediyoruz
                 file_text = df.to_string(index=False)
                 all_texts.append(file_text)
 
         full_text = "\n".join(all_texts)
         st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
-        # Metin parçalama
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
+        # Daha küçük chunk ve overlap ile parçalama
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=300,
+            separators=["\n\n", "\n", ".", "!", "?", ";"]
+        )
         chunks = text_splitter.split_text(full_text)
 
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
@@ -113,24 +108,54 @@ def main():
             return FAISS.from_texts(chunks, embeddings)
         vectorstore = create_vectorstore(chunks, embeddings)
 
-        # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            # Öncelikle LLM ile tabloları sorgula
+            # LLM tanımı
+            system_message = """
+            Sen bir doküman analisti asistanısın. 
+            Cevaplarını yalnızca verilen dokümanlardan çıkar, tahmin yürütme. 
+            Eğer bilgi yoksa 'Bu bilgi dokümanda yer almıyor.' de. 
+            Cevaplarını kısa, net ve bağlama uygun ver.
+            """
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key, system_message=system_message)
+
+            # Excel/CSV tablolarını sorgula
             table_answers = []
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             for df in excel_tables:
-                prompt = f"Sana bir Excel tablosu verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
+                filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(user_question, case=False).any(), axis=1)]
+                if filtered_df.empty:
+                    filtered_df = df
+                prompt = f"""
+                Aşağıdaki Excel tablosunu kullanarak soruyu cevapla.
+                Tablo:
+                {filtered_df.to_string(index=False)}
+                Soru: {user_question}
+                Cevap yalnızca tabloda mevcut bilgilere dayanmalıdır.
+                """
                 table_answer = llm.call_as_llm(prompt)
                 table_answers.append(table_answer)
 
-            # Metin tabanlı belgeleri de QA zinciri ile sorgula
-            docs = vectorstore.similarity_search(user_question, k=6)
-            chain = load_qa_chain(llm, chain_type="stuff")
-            text_answer = chain.run(input_documents=docs, question=user_question)
+            # Metin tabanlı belgeler için RetrievalQA zinciri (refine)
+            retriever = vectorstore.as_retriever(search_kwargs={"k":6})
+            qa_chain = RetrievalQA.from_chain_type(
+                llm=llm,
+                chain_type="refine",
+                retriever=retriever,
+                return_source_documents=False
+            )
+            text_answer = qa_chain.run(user_question)
+
+            # Self-verification
+            verify_prompt = f"""
+            Cevap: {text_answer}
+            Soru: {user_question}
+            Cevabın verilen doküman ve tablolar ile uyumlu olup olmadığını kontrol et. 
+            Uyumlu değilse 'Bu bilgi dokümanda yer almıyor.' de.
+            """
+            final_text_answer = llm.call_as_llm(verify_prompt)
 
             # Sonuçları birleştir
-            final_answer = text_answer
+            final_answer = final_text_answer
             if table_answers:
                 final_answer += "\n\n📊 Excel/CSV tablosundan alınan cevaplar:\n" + "\n".join(table_answers)
 
@@ -138,7 +163,7 @@ def main():
             st.success(final_answer)
             log_question(user_question, final_answer)
 
-    # Sidebar: Rapor ve Sıfırlama
+    # Sidebar
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
