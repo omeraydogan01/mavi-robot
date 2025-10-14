@@ -6,15 +6,17 @@ from docx import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQA
+from langchain.chains.question_answering import load_qa_chain
 from datetime import datetime
 from io import BytesIO
 
 LOG_FILE = "logs.xlsx"
 
+# Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
 RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
+# Log kaydetme
 def log_question(question, answer):
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -28,6 +30,7 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_excel(LOG_FILE, index=False)
 
+# Rapor indirilebilir Excel dosyası
 def get_report():
     if os.path.exists(LOG_FILE):
         df = pd.read_excel(LOG_FILE)
@@ -37,6 +40,7 @@ def get_report():
         return output
     return None
 
+# Sıfırlama
 def reset_logs():
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
@@ -93,69 +97,45 @@ def main():
         full_text = "\n".join(all_texts)
         st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
-        # Daha küçük chunk ve overlap ile parçalama
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=300,
-            separators=["\n\n", "\n", ".", "!", "?", ";"]
-        )
+        # Metin parçalama
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(full_text)
 
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
-        @st.cache_resource
-        def create_vectorstore(chunks, embeddings):
-            return FAISS.from_texts(chunks, embeddings)
-        vectorstore = create_vectorstore(chunks, embeddings)
+        # Vectorstore oluşturma (cache kaldırıldı)
+        vectorstore = FAISS.from_texts(chunks, embeddings)
 
+        # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            # LLM tanımı
-            system_message = """
-            Sen bir doküman analisti asistanısın. 
-            Cevaplarını yalnızca verilen dokümanlardan çıkar, tahmin yürütme. 
-            Eğer bilgi yoksa 'Bu bilgi dokümanda yer almıyor.' de. 
-            Cevaplarını kısa, net ve bağlama uygun ver.
-            """
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key, system_message=system_message)
+            llm = ChatOpenAI(
+                model="gpt-4o-mini",
+                temperature=0,
+                api_key=api_key,
+                system_message=(
+                    "Sen bir doküman analisti asistanısın. Cevaplarını sadece verilen dokümanlardan çıkar, "
+                    "tahmin yürütme. Eğer bilgi yoksa 'Bu bilgi dokümanda yer almıyor.' de."
+                )
+            )
 
-            # Excel/CSV tablolarını sorgula
+            # Excel/CSV tablosu için sorgulama
             table_answers = []
             for df in excel_tables:
                 filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(user_question, case=False).any(), axis=1)]
                 if filtered_df.empty:
-                    filtered_df = df
-                prompt = f"""
-                Aşağıdaki Excel tablosunu kullanarak soruyu cevapla.
-                Tablo:
-                {filtered_df.to_string(index=False)}
-                Soru: {user_question}
-                Cevap yalnızca tabloda mevcut bilgilere dayanmalıdır.
-                """
-                table_answer = llm.call_as_llm(prompt)
+                    filtered_df = df.head(10)
+                prompt = f"Sana bir Excel tablosu verdim:\n{filtered_df.to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
+                table_answer = llm(prompt)
                 table_answers.append(table_answer)
 
-            # Metin tabanlı belgeler için RetrievalQA zinciri (refine)
-            retriever = vectorstore.as_retriever(search_kwargs={"k":6})
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=llm,
-                chain_type="refine",
-                retriever=retriever,
-                return_source_documents=False
-            )
-            text_answer = qa_chain.run(user_question)
+            # Metin tabanlı belgeler için QA zinciri
+            docs = vectorstore.similarity_search(user_question, k=6)
+            chain = load_qa_chain(llm, chain_type="stuff")
+            text_answer = chain.run(input_documents=docs, question=user_question)
 
-            # Self-verification
-            verify_prompt = f"""
-            Cevap: {text_answer}
-            Soru: {user_question}
-            Cevabın verilen doküman ve tablolar ile uyumlu olup olmadığını kontrol et. 
-            Uyumlu değilse 'Bu bilgi dokümanda yer almıyor.' de.
-            """
-            final_text_answer = llm.call_as_llm(verify_prompt)
-
-            # Sonuçları birleştir
-            final_answer = final_text_answer
+            # Cevapları birleştir
+            final_answer = text_answer
             if table_answers:
                 final_answer += "\n\n📊 Excel/CSV tablosundan alınan cevaplar:\n" + "\n".join(table_answers)
 
