@@ -15,9 +15,6 @@ LOG_FILE = "logs.xlsx"
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
 RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
-# ------------------------
-# Log işlemleri
-# ------------------------
 def log_question(question, answer):
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -45,60 +42,9 @@ def reset_logs():
         os.remove(LOG_FILE)
         st.success("✅ Soru-cevap geçmişi sıfırlandı!")
 
-# ------------------------
-# CSS: Modern input alanı
-# ------------------------
-st.markdown(
-    """
-    <style>
-    div.stTextInput > div > input {
-        background-color: var(--bg-color) !important;
-        color: var(--text-color) !important;
-        border: 1px solid var(--border-color) !important;
-        border-radius: 8px !important;
-        padding: 10px 14px !important;
-        font-size: 16px !important;
-        transition: all 0.2s ease-in-out;
-    }
-    div.stTextInput > div > input::placeholder {
-        color: var(--placeholder-color) !important;
-        opacity: 1 !important;
-    }
-    div.stTextInput > div > input:hover {
-        border-color: var(--hover-border-color) !important;
-        box-shadow: 0 0 5px var(--hover-border-color)33 !important;
-    }
-    div.stTextInput > div > input:focus {
-        border-color: var(--focus-border-color) !important;
-        box-shadow: 0 0 8px var(--focus-border-color)55 !important;
-        outline: none !important;
-    }
-    :root {
-        --bg-color: #f0f0f0;
-        --text-color: #000000;
-        --border-color: #ccc;
-        --placeholder-color: #555;
-        --hover-border-color: #888;
-        --focus-border-color: #007bff;
-    }
-    [data-baseweb="baseweb"] {
-        --bg-color: #333333;
-        --text-color: #f0f0f0;
-        --border-color: #888;
-        --placeholder-color: #aaa;
-        --hover-border-color: #bbb;
-        --focus-border-color: #00bfff;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# ------------------------
-# Main app
-# ------------------------
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
+
     col1, col2 = st.columns([1,6])
     with col1:
         st.image("logo.png", width=120)
@@ -171,7 +117,7 @@ def main():
                 system_message="Sen bir doküman analisti asistanısın. Cevaplarını sadece verilen dokümanlardan çıkar, tahmin yürütme. Eğer bilgi yoksa 'Bu bilgi dokümanda yer almıyor.' de."
             )
 
-            # Excel tabloları sorgulama
+            # Excel tabloları için filtreleme
             table_answers = []
             for df in excel_tables:
                 filtered_df = df[df.apply(lambda row: row.astype(str).str.contains(user_question, case=False).any(), axis=1)]
@@ -184,13 +130,13 @@ def main():
             retriever = vectorstore.as_retriever(search_kwargs={"k":6})
             qa_chain = RetrievalQA.from_chain_type(
                 llm=llm,
-                chain_type="refine",
+                chain_type="map_reduce",
                 retriever=retriever,
                 return_source_documents=False
             )
             text_answer = qa_chain.run(user_question)
 
-            # Self-verification
+            # Self-verification (opsiyonel)
             verify_prompt = f"""
             Cevap: {text_answer}
             Soru: {user_question}
