@@ -3,10 +3,10 @@ import streamlit as st
 import pandas as pd
 from PyPDF2 import PdfReader
 from docx import Document
-from langchain.text_splitters import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import Chroma
-from langchain.chains import RetrievalQA
+from langchain_community.vectorstores import FAISS
+from langchain.chains.question_answering import load_qa_chain
 from datetime import datetime
 from io import BytesIO
 
@@ -14,7 +14,7 @@ LOG_FILE = "logs.xlsx"
 
 # Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
 
 # Log kaydetme
 def log_question(question, answer):
@@ -59,7 +59,7 @@ def main():
     # API key
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
-        st.error("⚠️ API key bulunamadı.")
+        st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
     # Çoklu dosya yükleme
@@ -94,6 +94,7 @@ def main():
                 else:
                     df = pd.read_csv(uploaded_file)
                 excel_tables.append(df)  # DataFrame olarak kaydet
+                # DataFrame’i metin olarak da kaydediyoruz
                 file_text = df.to_string(index=False)
                 all_texts.append(file_text)
 
@@ -101,29 +102,31 @@ def main():
         st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
         # Metin parçalama
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(full_text)
 
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
-        # Vectorstore oluşturma
-        vectorstore = Chroma.from_texts(chunks, embedding=embeddings)
+        @st.cache_resource
+        def create_vectorstore(chunks, embeddings):
+            return FAISS.from_texts(chunks, embeddings)
+        vectorstore = create_vectorstore(chunks, embeddings)
 
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            # Excel/CSV tablolarını sorgula
+            # Öncelikle LLM ile tabloları sorgula
             table_answers = []
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             for df in excel_tables:
-                prompt = f"Sana bir tablo verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
+                prompt = f"Sana bir Excel tablosu verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
                 table_answer = llm.call_as_llm(prompt)
                 table_answers.append(table_answer)
 
-            # Metin tabanlı belgeleri sorgula
-            retriever = vectorstore.as_retriever(search_kwargs={"k":6})
-            qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, chain_type="map_reduce")
-            text_answer = qa_chain.run(user_question)
+            # Metin tabanlı belgeleri de QA zinciri ile sorgula
+            docs = vectorstore.similarity_search(user_question, k=6)
+            chain = load_qa_chain(llm, chain_type="stuff")
+            text_answer = chain.run(input_documents=docs, question=user_question)
 
             # Sonuçları birleştir
             final_answer = text_answer
@@ -134,7 +137,7 @@ def main():
             st.success(final_answer)
             log_question(user_question, final_answer)
 
-    # Sidebar
+    # Sidebar: Rapor ve Sıfırlama
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
