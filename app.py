@@ -6,7 +6,7 @@ from docx import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain.chains.combine_documents import load_qa_chain
+from langchain.chains.question_answering import load_qa_chain
 from datetime import datetime
 from io import BytesIO
 
@@ -93,7 +93,8 @@ def main():
                     df = pd.read_excel(uploaded_file)
                 else:
                     df = pd.read_csv(uploaded_file)
-                excel_tables.append(df)
+                excel_tables.append(df)  # DataFrame olarak kaydet
+                # DataFrame’i metin olarak da kaydediyoruz
                 file_text = df.to_string(index=False)
                 all_texts.append(file_text)
 
@@ -101,7 +102,7 @@ def main():
         st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
         # Metin parçalama
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(full_text)
 
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
@@ -114,7 +115,7 @@ def main():
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            # LLM ile Excel tablolarını sorgula
+            # Öncelikle LLM ile tabloları sorgula
             table_answers = []
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             for df in excel_tables:
@@ -122,7 +123,7 @@ def main():
                 table_answer = llm.call_as_llm(prompt)
                 table_answers.append(table_answer)
 
-            # Metin tabanlı belgeler için QA zinciri
+            # Metin tabanlı belgeleri de QA zinciri ile sorgula
             docs = vectorstore.similarity_search(user_question, k=6)
             chain = load_qa_chain(llm, chain_type="stuff")
             text_answer = chain.run(input_documents=docs, question=user_question)
@@ -136,7 +137,7 @@ def main():
             st.success(final_answer)
             log_question(user_question, final_answer)
 
-    # Sidebar
+    # Sidebar: Rapor ve Sıfırlama
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
