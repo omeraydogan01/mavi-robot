@@ -1,7 +1,7 @@
-streamlit>=1.24.1
-pandas>=2.0.3
-PyPDF2>=3.1.0
-python-docx>=0.8.11
-openai>=1.0.0
-langchain>=1.0.0
-faiss-cpu>=1.7.4
+streamlit==1.29.0
+pandas==2.1.0
+PyPDF2==3.1.0
+python-docx==0.8.11
+openai==1.29.0
+langchain==0.1.198
+faiss-cpu==1.7.4
