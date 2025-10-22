@@ -3,10 +3,10 @@ import streamlit as st
 import pandas as pd
 from PyPDF2 import PdfReader
 from docx import Document
-from langchain.text_splitters import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQA
+from langchain.chains.combine_documents import load_qa_chain
 from datetime import datetime
 from io import BytesIO
 
@@ -14,7 +14,7 @@ LOG_FILE = "logs.xlsx"
 
 # Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
 
 # Log kaydetme
 def log_question(question, answer):
@@ -93,7 +93,7 @@ def main():
                     df = pd.read_excel(uploaded_file)
                 else:
                     df = pd.read_csv(uploaded_file)
-                excel_tables.append(df)  # DataFrame olarak kaydet
+                excel_tables.append(df)
                 file_text = df.to_string(index=False)
                 all_texts.append(file_text)
 
@@ -114,25 +114,18 @@ def main():
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            # LLM tanımı
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
-
-            # Excel/CSV tablolarını sorgula
+            # LLM ile Excel tablolarını sorgula
             table_answers = []
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             for df in excel_tables:
-                prompt = f"Sana bir tablo verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
-                table_answer = llm(prompt).content
+                prompt = f"Sana bir Excel tablosu verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
+                table_answer = llm.call_as_llm(prompt)
                 table_answers.append(table_answer)
 
-            # Metin tabanlı belgeler için RetrievalQA
-            retriever = vectorstore.as_retriever(search_kwargs={"k":6})
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=llm,
-                chain_type="stuff",
-                retriever=retriever,
-                return_source_documents=False
-            )
-            text_answer = qa_chain.run(user_question)
+            # Metin tabanlı belgeler için QA zinciri
+            docs = vectorstore.similarity_search(user_question, k=6)
+            chain = load_qa_chain(llm, chain_type="stuff")
+            text_answer = chain.run(input_documents=docs, question=user_question)
 
             # Sonuçları birleştir
             final_answer = text_answer
@@ -143,7 +136,7 @@ def main():
             st.success(final_answer)
             log_question(user_question, final_answer)
 
-    # Sidebar: Rapor ve Sıfırlama
+    # Sidebar
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
