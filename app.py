@@ -6,7 +6,8 @@ from docx import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain.chains import load_qa_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain
 from datetime import datetime
 from io import BytesIO
 
@@ -49,14 +50,14 @@ def reset_logs():
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
 
-    # Header ve logo
+    # Header
     col1, col2 = st.columns([1,6])
     with col1:
         st.image("logo.png", width=120)
     with col2:
         st.header("Dokümana Soru Sor")
 
-    # API key kontrolü
+    # API Key
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
@@ -106,7 +107,7 @@ def main():
 
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
-        # Cache yerine session_state kullanımı
+        # Cache yerine session_state
         if "vectorstore" not in st.session_state:
             with st.spinner("🔍 Belgeler indeksleniyor..."):
                 vectorstore = FAISS.from_texts(chunks, embeddings)
@@ -119,22 +120,23 @@ def main():
         if user_question:
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
 
-            # Excel tablosu varsa analiz et
+            # Excel tablosu sorgusu
             table_answers = []
             for df in excel_tables:
-                prompt = f"Sana bir Excel tablosu verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
+                prompt = f"Sana bir tablo verdim:\n{df.head(10).to_string(index=False)}\nSoru: {user_question}"
                 table_answer = llm.call_as_llm(prompt)
                 table_answers.append(table_answer)
 
-            # Metin tabanlı doküman analizi
-            docs = vectorstore.similarity_search(user_question, k=6)
-            chain = load_qa_chain(llm, chain_type="stuff")
-            text_answer = chain.run(input_documents=docs, question=user_question)
+            # LangChain yeni QA yapısı
+            retriever = vectorstore.as_retriever()
+            doc_chain = create_stuff_documents_chain(llm, None)
+            qa_chain = create_retrieval_chain(retriever, doc_chain)
+            result = qa_chain.invoke({"input": user_question})
+            text_answer = result.get("answer", "Cevap bulunamadı.")
 
-            # Sonuçları birleştir
             final_answer = text_answer
             if table_answers:
-                final_answer += "\n\n📊 Excel/CSV tablosundan alınan cevaplar:\n" + "\n".join(table_answers)
+                final_answer += "\n\n📊 Tablo bazlı analiz:\n" + "\n".join(table_answers)
 
             st.subheader("💡 Cevap")
             st.success(final_answer)
