@@ -6,7 +6,7 @@ from docx import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQA
+from langchain.chains import load_qa_chain
 from datetime import datetime
 from io import BytesIO
 
@@ -49,17 +49,20 @@ def reset_logs():
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
 
+    # Header ve logo
     col1, col2 = st.columns([1,6])
     with col1:
         st.image("logo.png", width=120)
     with col2:
         st.header("Dokümana Soru Sor")
 
+    # API key kontrolü
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
+    # Çoklu dosya yükleme
     uploaded_files = st.file_uploader(
         "📂 Bir veya birden fazla doküman yükleyin",
         type=["pdf", "docx", "xlsx", "csv"],
@@ -103,31 +106,30 @@ def main():
 
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
-        @st.cache_resource
-        def create_vectorstore(chunks, embeddings):
-            return FAISS.from_texts(chunks, embeddings)
-        vectorstore = create_vectorstore(chunks, embeddings)
+        # Cache yerine session_state kullanımı
+        if "vectorstore" not in st.session_state:
+            with st.spinner("🔍 Belgeler indeksleniyor..."):
+                vectorstore = FAISS.from_texts(chunks, embeddings)
+                st.session_state["vectorstore"] = vectorstore
+        else:
+            vectorstore = st.session_state["vectorstore"]
 
+        # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
-
         if user_question:
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
 
-            # Excel/CSV tablosu sorgulama
+            # Excel tablosu varsa analiz et
             table_answers = []
             for df in excel_tables:
                 prompt = f"Sana bir Excel tablosu verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
                 table_answer = llm.call_as_llm(prompt)
                 table_answers.append(table_answer)
 
-            # Metin tabanlı belgeler için RetrievalQA
-            retriever = vectorstore.as_retriever(search_kwargs={"k": 6})
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=llm,
-                retriever=retriever,
-                chain_type="stuff"
-            )
-            text_answer = qa_chain.run(user_question)
+            # Metin tabanlı doküman analizi
+            docs = vectorstore.similarity_search(user_question, k=6)
+            chain = load_qa_chain(llm, chain_type="stuff")
+            text_answer = chain.run(input_documents=docs, question=user_question)
 
             # Sonuçları birleştir
             final_answer = text_answer
