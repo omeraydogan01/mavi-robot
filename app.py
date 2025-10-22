@@ -4,14 +4,15 @@ import pandas as pd
 from PyPDF2 import PdfReader
 from docx import Document
 from langchain.text_splitters import RecursiveCharacterTextSplitter
-from langchain.chains.combine_documents import load_qa_chain
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
+from langchain.chains import RetrievalQA
 from datetime import datetime
 from io import BytesIO
 
 LOG_FILE = "logs.xlsx"
 
+# Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
 RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
@@ -61,7 +62,7 @@ def main():
         st.error("⚠️ API key bulunamadı.")
         st.stop()
 
-    # Dosya yükleme
+    # Çoklu dosya yükleme
     uploaded_files = st.file_uploader(
         "📂 Bir veya birden fazla doküman yükleyin",
         type=["pdf", "docx", "xlsx", "csv"],
@@ -92,7 +93,7 @@ def main():
                     df = pd.read_excel(uploaded_file)
                 else:
                     df = pd.read_csv(uploaded_file)
-                excel_tables.append(df)
+                excel_tables.append(df)  # DataFrame olarak kaydet
                 file_text = df.to_string(index=False)
                 all_texts.append(file_text)
 
@@ -105,27 +106,24 @@ def main():
 
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
-        @st.cache_resource
-        def create_vectorstore(chunks, embeddings):
-            return FAISS.from_texts(chunks, embeddings)
-        vectorstore = create_vectorstore(chunks, embeddings)
+        # Vectorstore oluşturma
+        vectorstore = Chroma.from_texts(chunks, embedding=embeddings)
 
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
-
-            # Excel tablolarını sorgula
+            # Excel/CSV tablolarını sorgula
             table_answers = []
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
             for df in excel_tables:
-                prompt = f"Sana bir Excel tablosu verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
+                prompt = f"Sana bir tablo verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
                 table_answer = llm.call_as_llm(prompt)
                 table_answers.append(table_answer)
 
             # Metin tabanlı belgeleri sorgula
-            docs = vectorstore.similarity_search(user_question, k=6)
-            chain = load_qa_chain(llm, chain_type="stuff")
-            text_answer = chain.run(input_documents=docs, question=user_question)
+            retriever = vectorstore.as_retriever(search_kwargs={"k":6})
+            qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, chain_type="map_reduce")
+            text_answer = qa_chain.run(user_question)
 
             # Sonuçları birleştir
             final_answer = text_answer
