@@ -2,7 +2,7 @@ import os
 import streamlit as st
 from PyPDF2 import PdfReader
 from docx import Document
-from langchain.text_splitters import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains.question_answering import load_qa_chain
 from datetime import datetime
