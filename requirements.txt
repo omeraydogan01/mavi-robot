@@ -1,6 +1,6 @@
-streamlit==1.29.0
+streamlit
 pandas
 PyPDF2
 python-docx
 openai
-langchain==0.2.39
+langchain
