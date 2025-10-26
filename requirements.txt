@@ -1,9 +1,11 @@
+streamlit
+pandas
+PyPDF2
+python-docx
+openpyxl
+faiss-cpu
 langchain>=0.2.11
 langchain-community>=0.2.10
 langchain-core>=0.2.10
 langchain-openai>=0.1.7
-faiss-cpu
-PyPDF2
-python-docx
-pandas
-streamlit
+langchain-text-splitters>=0.2.2
