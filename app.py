@@ -13,9 +13,8 @@ LOG_FILE = "logs.xlsx"
 
 # Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
 
-# Log kaydetme
 def log_question(question, answer):
     df_new = pd.DataFrame([{
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -29,7 +28,6 @@ def log_question(question, answer):
         df_all = df_new
     df_all.to_excel(LOG_FILE, index=False)
 
-# Rapor indirilebilir Excel dosyası
 def get_report():
     if os.path.exists(LOG_FILE):
         df = pd.read_excel(LOG_FILE)
@@ -39,13 +37,12 @@ def get_report():
         return output
     return None
 
-# Sıfırlama
 def reset_logs():
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
         st.success("✅ Soru-cevap geçmişi sıfırlandı!")
 
-# Basit vector store (FAISS olmadan)
+# Basit vector store
 class SimpleVectorStore:
     def __init__(self, chunks):
         self.chunks = chunks
@@ -56,22 +53,19 @@ class SimpleVectorStore:
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
 
-    # Header ve logo
     col1, col2 = st.columns([1,6])
     with col1:
         st.image("logo.png", width=120)
     with col2:
         st.header("Dokümana Soru Sor")
 
-    # API key
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
-        st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
+        st.error("⚠️ API key bulunamadı.")
         st.stop()
 
-    # Dosya yükleme (PDF ve DOCX)
     uploaded_files = st.file_uploader(
-        "📂 Bir veya birden fazla doküman yükleyin",
+        "📂 PDF veya DOCX yükleyin",
         type=["pdf", "docx"],
         accept_multiple_files=True
     )
@@ -82,37 +76,27 @@ def main():
         for uploaded_file in uploaded_files:
             ext = uploaded_file.name.split(".")[-1].lower()
             file_text = ""
-
             if ext == "pdf":
                 pdf_reader = PdfReader(uploaded_file)
                 for page in pdf_reader.pages:
                     file_text += page.extract_text() or ""
-                all_texts.append(file_text)
-
             elif ext == "docx":
                 doc = Document(uploaded_file)
                 file_text = "\n".join([p.text for p in doc.paragraphs])
-                all_texts.append(file_text)
+            all_texts.append(file_text)
 
         full_text = "\n".join(all_texts)
         st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
-        # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(full_text)
 
-        # Embedding
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
-
-        # Basit vectorstore kullan
         vectorstore = SimpleVectorStore(chunks)
 
-        # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
-
-            # Metin tabanlı belgeleri QA zinciri ile sorgula
             docs = vectorstore.similarity_search(user_question, k=6)
             chain = load_qa_chain(llm, chain_type="stuff")
             text_answer = chain.run(input_documents=docs, question=user_question)
@@ -121,7 +105,6 @@ def main():
             st.success(text_answer)
             log_question(user_question, text_answer)
 
-    # Sidebar: Rapor ve Sıfırlama
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
         st.subheader("📥 Rapor İndir")
         report_pass = st.text_input("Rapor şifresi", type="password")
