@@ -3,11 +3,10 @@ import streamlit as st
 import pandas as pd
 from PyPDF2 import PdfReader
 from docx import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain.chains import create_stuff_documents_chain, create_retrieval_chain
-from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains.question_answering import load_qa_chain
 from datetime import datetime
 from io import BytesIO
 
@@ -15,7 +14,7 @@ LOG_FILE = "logs.xlsx"
 
 # Secrets şifreleri
 REPORT_PASSWORD = st.secrets.get("REPORT_PASSWORD", "1234")
-RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")
+RESET_PASSWORD = st.secrets.get("RESET_PASSWORD", "1234")  # Sıfırlama şifresi
 
 # Log kaydetme
 def log_question(question, answer):
@@ -63,15 +62,14 @@ def main():
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
-    # Çoklu dosya yükleme
+    # Çoklu dosya yükleme (sadece PDF ve DOCX)
     uploaded_files = st.file_uploader(
         "📂 Bir veya birden fazla doküman yükleyin",
-        type=["pdf", "docx", "xlsx", "csv"],
+        type=["pdf", "docx"],
         accept_multiple_files=True
     )
 
     all_texts = []
-    excel_tables = []
 
     if uploaded_files:
         for uploaded_file in uploaded_files:
@@ -89,15 +87,6 @@ def main():
                 file_text = "\n".join([p.text for p in doc.paragraphs])
                 all_texts.append(file_text)
 
-            elif ext in ["xlsx", "csv"]:
-                if ext == "xlsx":
-                    df = pd.read_excel(uploaded_file)
-                else:
-                    df = pd.read_csv(uploaded_file)
-                excel_tables.append(df)
-                file_text = df.to_string(index=False)
-                all_texts.append(file_text)
-
         full_text = "\n".join(all_texts)
         st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
@@ -110,40 +99,20 @@ def main():
         @st.cache_resource
         def create_vectorstore(chunks, embeddings):
             return FAISS.from_texts(chunks, embeddings)
-
         vectorstore = create_vectorstore(chunks, embeddings)
 
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
-
         if user_question:
+            # LLM ile QA zinciri
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
-
-            # Excel tablolarını sorgula
-            table_answers = []
-            for df in excel_tables:
-                prompt = f"Sana bir tablo verdim:\n{df.head(10).to_string(index=False)}\nBu tabloya göre soruyu cevapla: {user_question}"
-                table_answer = llm.invoke(prompt).content
-                table_answers.append(table_answer)
-
-            # QA zinciri
-            prompt_template = ChatPromptTemplate.from_template(
-                "Aşağıdaki belgeleri kullanarak soruyu yanıtla:\n\n{context}\n\nSoru: {input}"
-            )
-            document_chain = create_stuff_documents_chain(llm, prompt_template)
-            retrieval_chain = create_retrieval_chain(vectorstore.as_retriever(), document_chain)
-
-            response = retrieval_chain.invoke({"input": user_question})
-            text_answer = response.get("answer", "Cevap bulunamadı.")
-
-            # Sonuçları birleştir
-            final_answer = text_answer
-            if table_answers:
-                final_answer += "\n\n📊 Excel/CSV tablosundan alınan cevaplar:\n" + "\n".join(table_answers)
+            docs = vectorstore.similarity_search(user_question, k=6)
+            chain = load_qa_chain(llm, chain_type="stuff")
+            text_answer = chain.run(input_documents=docs, question=user_question)
 
             st.subheader("💡 Cevap")
-            st.success(final_answer)
-            log_question(user_question, final_answer)
+            st.success(text_answer)
+            log_question(user_question, text_answer)
 
     # Sidebar: Rapor ve Sıfırlama
     with st.sidebar.expander("📊 Rapor & Yönetim", expanded=False):
