@@ -5,7 +5,6 @@ from PyPDF2 import PdfReader
 from docx import Document
 from langchain.text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 from datetime import datetime
 from io import BytesIO
@@ -46,6 +45,14 @@ def reset_logs():
         os.remove(LOG_FILE)
         st.success("✅ Soru-cevap geçmişi sıfırlandı!")
 
+# Basit vector store (FAISS olmadan)
+class SimpleVectorStore:
+    def __init__(self, chunks):
+        self.chunks = chunks
+
+    def similarity_search(self, query, k=5):
+        return self.chunks[:k]
+
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
 
@@ -62,7 +69,7 @@ def main():
         st.error("⚠️ API key bulunamadı. Lütfen secrets veya environment değişkeni ekleyin.")
         st.stop()
 
-    # Çoklu dosya yükleme (sadece PDF ve DOCX)
+    # Dosya yükleme (PDF ve DOCX)
     uploaded_files = st.file_uploader(
         "📂 Bir veya birden fazla doküman yükleyin",
         type=["pdf", "docx"],
@@ -94,18 +101,18 @@ def main():
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(full_text)
 
+        # Embedding
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
 
-        @st.cache_resource
-        def create_vectorstore(chunks, embeddings):
-            return FAISS.from_texts(chunks, embeddings)
-        vectorstore = create_vectorstore(chunks, embeddings)
+        # Basit vectorstore kullan
+        vectorstore = SimpleVectorStore(chunks)
 
         # Kullanıcı sorusu
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
-            # LLM ile QA zinciri
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
+
+            # Metin tabanlı belgeleri QA zinciri ile sorgula
             docs = vectorstore.similarity_search(user_question, k=6)
             chain = load_qa_chain(llm, chain_type="stuff")
             text_answer = chain.run(input_documents=docs, question=user_question)
