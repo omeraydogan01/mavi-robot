@@ -1,6 +1,5 @@
 import os
 import streamlit as st
-import pandas as pd
 from PyPDF2 import PdfReader
 from docx import Document
 from langchain.text_splitters import RecursiveCharacterTextSplitter
@@ -8,6 +7,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains.question_answering import load_qa_chain
 from datetime import datetime
 from io import BytesIO
+import pandas as pd
 
 LOG_FILE = "logs.xlsx"
 
@@ -42,14 +42,6 @@ def reset_logs():
         os.remove(LOG_FILE)
         st.success("✅ Soru-cevap geçmişi sıfırlandı!")
 
-# Basit vector store
-class SimpleVectorStore:
-    def __init__(self, chunks):
-        self.chunks = chunks
-
-    def similarity_search(self, query, k=5):
-        return self.chunks[:k]
-
 def main():
     st.set_page_config(page_title="Mavi Soru Robotu", page_icon="logo.png")
 
@@ -65,7 +57,7 @@ def main():
         st.stop()
 
     uploaded_files = st.file_uploader(
-        "📂 PDF veya DOCX yükleyin",
+        "📂 Bir veya birden fazla doküman yükleyin",
         type=["pdf", "docx"],
         accept_multiple_files=True
     )
@@ -80,19 +72,27 @@ def main():
                 pdf_reader = PdfReader(uploaded_file)
                 for page in pdf_reader.pages:
                     file_text += page.extract_text() or ""
+                all_texts.append(file_text)
             elif ext == "docx":
                 doc = Document(uploaded_file)
                 file_text = "\n".join([p.text for p in doc.paragraphs])
-            all_texts.append(file_text)
+                all_texts.append(file_text)
 
         full_text = "\n".join(all_texts)
         st.info(f"📚 {len(uploaded_files)} doküman yüklendi. Toplam {len(full_text.split())} kelime işlendi.")
 
+        # Metin parçalama
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = text_splitter.split_text(full_text)
 
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=api_key)
-        vectorstore = SimpleVectorStore(chunks)
+
+        @st.cache_resource
+        def create_vectorstore(chunks, embeddings):
+            from langchain.vectorstores import SimpleVectorStore
+            return SimpleVectorStore.from_texts(chunks, embeddings)
+
+        vectorstore = create_vectorstore(chunks, embeddings)
 
         user_question = st.text_input("Sorunuzu yazın 👇")
         if user_question:
@@ -100,7 +100,6 @@ def main():
             docs = vectorstore.similarity_search(user_question, k=6)
             chain = load_qa_chain(llm, chain_type="stuff")
             text_answer = chain.run(input_documents=docs, question=user_question)
-
             st.subheader("💡 Cevap")
             st.success(text_answer)
             log_question(user_question, text_answer)
