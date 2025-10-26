@@ -5,7 +5,7 @@ from docx import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from datetime import datetime
 from io import BytesIO
