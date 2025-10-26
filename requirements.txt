@@ -3,8 +3,9 @@ pandas
 PyPDF2
 python-docx
 openpyxl
+faiss-cpu
 langchain
 langchain-openai
 langchain-community
 langchain-text-splitters
-faiss-cpu
+langchain-core
