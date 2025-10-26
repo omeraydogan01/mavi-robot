@@ -1,8 +1,6 @@
-streamlit
+streamlit==1.29.0
 pandas
 PyPDF2
 python-docx
 openai
-faiss-cpu
 langchain==0.2.39
-langchain-openai
