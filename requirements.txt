@@ -3,4 +3,4 @@ pandas
 PyPDF2
 python-docx
 openai
-langchain
+langchain==0.2.39
